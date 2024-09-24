@@ -1,6 +1,8 @@
 # from queue import Queue
-import heapq
+# import heapq
+from queue import PriorityQueue
 from urllib.parse import urlparse, urljoin
+from urllib.parse import urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 import requests
 from datetime import datetime
@@ -9,19 +11,24 @@ import random
 import time
 from bs4 import BeautifulSoup
 import signal
+import threading
 
 
 debug_mode = False
+
 
 # Signal handler for timeout
 def handler(signum, frame):
     raise TimeoutException()
 
+
 # Set the global timeout handler (this can be outside of WebCrawler class)
 signal.signal(signal.SIGALRM, handler)
 
+
 class TimeoutException(Exception):
     pass
+
 
 # Deprecated: Use Beautiful Soup instead
 class LinkExtractor(HTMLParser):
@@ -62,10 +69,9 @@ class WebCrawler:
         self.url_visited = {}
         # Dictionary to track domain enqueue times (key: domain, value: enqueue count)
         self.domain_enqueued = {}
-        # # BFS queue
-        # self.to_visit = Queue()
         # Initialize priority queue
-        self.to_visit = []
+        # self.to_visit = []
+        self.to_visit = PriorityQueue()
         # Do not visit the extensions in the blacklist
         self.blacklist_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', '.xls', '.xlsx'}
         # object TLD
@@ -75,12 +81,17 @@ class WebCrawler:
         self.robots_parsers = {}  # Store robot parsers for each domain
         self.seed_urls = set()  # For logger to record seed pages
 
+        self.visited_lock = threading.Lock()
+        self.enqueue_lock = threading.Lock()
+        self.counter_lock = threading.Lock()
+
         # Insert seed URLs into the priority queue
         for url in seeds:
             # self.to_visit.put((url, 0))
             domain = self.get_domain(url)
             priority = self.get_priority(domain)
-            heapq.heappush(self.to_visit, (priority, self.queue_index, (url, 0)))  # Use priority, counter, (url, depth)
+            # heapq.heappush(self.to_visit, (priority, self.queue_index, (url, 0)))  # Use priority, queue_index, (url, depth)
+            self.to_visit.put((priority, self.queue_index, (url, 0)))  # Use priority, queue_index, (url, depth)
             self.queue_index += 1
             self.update_domain_enqueued(domain)  # Update domain enqueue count for seeds
             self.seed_urls.add(url)  # For logger to record seed pages
@@ -115,16 +126,19 @@ class WebCrawler:
         """
         Update the count of how many times a domain has been enqueued.
         """
-        if domain not in self.domain_enqueued:
-            self.domain_enqueued[domain] = 1
-        else:
-            self.domain_enqueued[domain] += 1
+        with self.enqueue_lock:
+            if domain not in self.domain_enqueued:
+                self.domain_enqueued[domain] = 1
+            else:
+                self.domain_enqueued[domain] += 1
 
     def get_priority(self, domain):
         """
         Calculate priority based on how many times the domain has been enqueued.
         """
-        count = self.domain_enqueued.get(domain, 0)
+        # count = self.domain_enqueued.get(domain, 0)
+        with self.enqueue_lock:
+            count = self.domain_enqueued.get(domain, 0)
         if count == 0:
             return 1  # Highest priority
         elif count == 1:
@@ -242,9 +256,13 @@ class WebCrawler:
             links = []
             for a_tag in soup.find_all('a', href=True):
                 href = a_tag['href']
-                # Convert relative URLs to absolute URLs
-                full_url = urljoin(base_url, href)
-                links.append(full_url)
+                try:
+                    # Convert relative URLs to absolute URLs
+                    full_url = urljoin(base_url, href)
+                    links.append(full_url)
+                except ValueError as ve:
+                    print(f"Error joining URL: {href}, base: {base_url} - {ve}")
+                    continue  # Skip the invalid URL and move to the next one
 
             # Disable the alarm after parsing completes
             signal.alarm(0)
@@ -252,126 +270,150 @@ class WebCrawler:
         except TimeoutException:
             print(f"Parsing timed out for page: {base_url}")
             return []
+        except Exception as e:
+            print(f"An unexpected error occurred while parsing {base_url}: {e}")
+            return []
 
-    def crawl_pages(self, max_pages=1000):
+    def normalize_url(self, url):
         """
-        BFS crawling with priority
+        Normalize the URL by removing fragments and query parameters.
+        :param url: The original URL
+        :return: Normalized URL
+        """
+        try:
+            # Parse the URL
+            parts = urlsplit(url)
+            # Remove query and fragment (i.e., part after ? or #)
+            normalized_url = urlunsplit((parts.scheme, parts.netloc, parts.path, '', ''))
+            return normalized_url
+        except Exception as e:
+            print(f"Error normalizing URL {url}: {e}")
+            return url  # Return the original URL if normalization fails
+
+    def crawl_pages(self, max_pages=1000, num_threads=10):
+        """
+        Multithreaded BFS crawling with priority
         """
         # Initialize start time
         self.start_time = datetime.now()
 
-        while len(self.to_visit) > 0 and self.url_counter < max_pages:
-            # print(f"Queue size: {self.to_visit.qsize()}")
-            # url, depth = self.to_visit.get()
-            print(f"Queue size: {len(self.to_visit)}")
-            # Extract the URL with the highest priority and FIFO order
-            priority, queue_index, (url, depth) = heapq.heappop(self.to_visit)
-            # domain = self.get_domain(url)
+        # # Number of threads
+        # num_threads
 
-            if url in self.url_visited:
-                print("Page already visited. Skipping...")
-                continue  # Skip the URL if already visited
+        # Keep track of how many URLs each thread processes
+        thread_stats = {f"Thread-{i}": 0 for i in range(1, num_threads + 1)}
 
-            print(f"Now visiting: Priority: {priority}, Depth: {depth}, Queue_index: {queue_index}, "
-                  f"URL: {url}")
-            page_content, size, status_code = self.download_page(url)
-            if not page_content:
+        def thread_worker(thread_id):
+            nonlocal thread_stats
+            while not self.to_visit.empty() and self.url_counter < max_pages:
+                try:
+                    priority, queue_index, (url, depth) = self.to_visit.get(timeout=3)  # Get URL from priority queue
+                except:
+                    break  # If queue is empty or timed out, exit the thread
+
+                normalized_url = self.normalize_url(url)  # Normalize the URL first
+
+                with self.visited_lock:
+                    if normalized_url in self.url_visited:
+                        print(f"Thread-{thread_id}: Page already visited. Skipping {normalized_url}...")
+                        continue  # Skip already visited URLs
+
+                print(
+                    f"Thread-{thread_id}: Now visiting: Priority: {priority}, Depth: {depth}, "
+                    f"Queue Index: {queue_index}, Queue Size: {self.to_visit.qsize()}, URL: {normalized_url}")
+
+                # Download and process the page
+                page_content, size, status_code = self.download_page(normalized_url)
+                if not page_content:
+                    if debug_mode:
+                        print(f"Thread-{thread_id}: Failed to download page {normalized_url}. Skipping...")
+                    continue  # Skip the page
+
+                # Update visited URLs
+                with self.visited_lock:
+                    self.url_visited[normalized_url] = {
+                        'size': size,  # in bytes
+                        'time': datetime.now(),
+                        'status': status_code,
+                        'depth': depth,  # BFS depth
+                        'order': self.url_counter  # Visiting order
+                    }
+                    self.url_counter += 1
+                    thread_stats[f"Thread-{thread_id}"] += 1
+
+                # Extract links and enqueue new URLs
+                extracted_links = self.extract_links(page_content, normalized_url)
                 if debug_mode:
-                    print("Failed to download page. Skipping...")
-                continue  # Skip the page
+                    print(f"Thread-{thread_id}: Extracted {len(extracted_links)} links from {normalized_url}")
 
-            # Update visited dictionary: Key: URL
-            self.url_visited[url] = {
-                'size': size,  # in bytes
-                'time': datetime.now(),
-                'status': status_code,
-                'depth': depth,  # BFS depth
-                'order': self.url_counter  # Visiting order
-            }
-            self.url_counter += 1  # Increment visited URL counter
+                # unique_links = set(extracted_links)
+                # Normalize the extracted links before adding to the set
+                unique_links = set(self.normalize_url(link) for link in extracted_links)
+                visited_count = 0
+                not_visited_count = 0
+                invalid_url_count = 0
+                existing_domain_count = 0
+                new_domain_count = 0
 
-            # Deprecated: extract using LinkExtractor class
-            # extractor = LinkExtractor()
-            # extractor.feed(page_content)
-            # if debug_mode:
-            #     print(f"Extracted {len(extractor.extracted_links)} links from {url}")
-            # Limit the number of links to process by randomly selecting from extracted links
-            # if len(extractor.extracted_links) > self.max_links_per_page:
-            #     selected_links = random.sample(extractor.extracted_links, self.max_links_per_page)
-            # else:
-            #     selected_links = extractor.extracted_links
+                for link in unique_links:
+                    # Construct absolute URLs and normalize
+                    full_url = self.normalize_url(urljoin(url, link))
+                    link_domain = self.get_domain(full_url)
 
-            # Extract links using BeautifulSoup
-            extracted_links = self.extract_links(page_content, url)
-            if debug_mode:
-                print(f"Extracted {len(extracted_links)} links from {url}")
+                    # Check if the URL is valid and not in the blacklist
+                    if not self.is_valid_url(full_url):
+                        invalid_url_count += 1
+                        continue  # Skip this URL if it's invalid
 
-            # Use a set to remove duplicate links
-            unique_links = set(extracted_links)
-
-            # Initialize visited and not visited counters
-            visited_count = 0
-            not_visited_count = 0
-            invalid_url_count = 0
-            existing_domain_count = 0
-            new_domain_count = 0
-
-            for link in unique_links:
-                # Construct absolute URLs
-                full_url = urljoin(url, link)
-                link_domain = self.get_domain(full_url)
-
-                # Check if the URL is valid and not in the blacklist
-                if not self.is_valid_url(full_url):
-                    invalid_url_count += 1
-                    # if debug_mode:
-                    #     print(f"Invalid or blacklisted URL: {full_url}")
-                    continue  # Skip this URL if it's invalid
-
-                if full_url not in self.url_visited:
-                    # Add to the queue if not visited
-                    # self.to_visit.put((full_url, depth + 1))
-                    # Get priority for the new URL based on its domain
-                    priority = self.get_priority(link_domain)
-                    # Add to the priority queue if not visited
-                    heapq.heappush(self.to_visit, (priority, self.queue_index, (full_url, depth + 1)))
-                    self.queue_index += 1
-                    not_visited_count += 1
-                    # self.url_counter += 1
-                    # Check if the domain is already in the domain_enqueued dictionary
-                    if link_domain in self.domain_enqueued:
-                        existing_domain_count += 1
+                    if full_url not in self.url_visited:
+                        # Get priority for the new URL based on its domain
+                        priority = self.get_priority(link_domain)
+                        with self.enqueue_lock:
+                            self.to_visit.put((priority, self.queue_index, (full_url, depth + 1)))
+                            self.queue_index += 1
+                        not_visited_count += 1
+                        if link_domain in self.domain_enqueued:
+                            existing_domain_count += 1
+                        else:
+                            new_domain_count += 1
+                        self.update_domain_enqueued(link_domain)
                     else:
-                        new_domain_count += 1
-                    self.update_domain_enqueued(link_domain)
-                else:
-                    visited_count += 1
+                        visited_count += 1
 
-            # Print the count of visited, not visited, added to queue, and invalid URLs after processing the links
-            print(f"Unique links extracted: {len(unique_links)}, "
-                  f"Already visited: {visited_count}, "
-                  f"Not visited (added to queue): {not_visited_count}, "
-                  f"In blacklist or invalid: {invalid_url_count}")
-            print(f"URLs enqueued with existing domain: {existing_domain_count}, "
-                  f"URLs enqueued with new domain: {new_domain_count}")
-            # self.url_counter += 1
+                print(
+                    f"Thread-{thread_id}: Unique links extracted: {len(unique_links)}, Already visited: {visited_count}, "
+                    f"Not visited (added to queue): {not_visited_count}, In blacklist or invalid: {invalid_url_count}, \n"
+                    f"Thread-{thread_id}: URLs enqueued with existing domain: {existing_domain_count}, "
+                    f"URLs enqueued with new domain: {new_domain_count}, \n"
+                    f"Thread-{thread_id}: Total URLs visited: {self.url_counter}, Total unique domains enqueued: {len(self.domain_enqueued)} \n"
+                    f"==================================")
 
-            print(f"Total URLs visited: {self.url_counter}, "
-                  f"Total unique domains enqueued: {len(self.domain_enqueued)}")
-            print("==================================")
+                if self.url_counter >= max_pages:
+                    print(f"Thread-{thread_id}: Crawling Finished: {max_pages} pages fetched. Stopping...")
 
-            if self.url_counter > max_pages:
-                print(f"Crawling Finished: {max_pages} pages fetched. Stopping...")
+        # Start threads
+        threads = []
+        for i in range(1, num_threads + 1):
+            t = threading.Thread(target=thread_worker, args=(i,))
+            t.start()
+            threads.append(t)
 
-        self.log()
+        # Wait for all threads to complete
+        for t in threads:
+            t.join()
 
-    def log(self):
+        # Log thread statistics
+        self.log(thread_stats)
+
+    def log(self, thread_stats):
+        """
+        Log the results of the crawl, including per-thread statistics.
+        """
         total_pages = len(self.url_visited)
         total_size = sum(info['size'] for info in self.url_visited.values())
         total_time_taken = (datetime.now() - self.start_time).total_seconds()
 
         status_codes_count = {}  # For counting different HTTP status codes
-        total_404_errors = 0
 
         # Generate the timestamp for log file naming
         timestamp = time.strftime("%Y-%m-%d-%H-%M-%S")
@@ -389,8 +431,6 @@ class WebCrawler:
                 )
                 # Count HTTP status codes
                 status_code = info['status']
-                if status_code == 404:
-                    total_404_errors += 1
                 if status_code not in status_codes_count:
                     status_codes_count[status_code] = 1
                 else:
@@ -401,14 +441,27 @@ class WebCrawler:
             log_file.write(f"Total pages crawled: {total_pages}\n")
             log_file.write(f"Total size: {total_size} bytes\n")
             log_file.write(f"Total time taken: {total_time_taken:.2f} seconds\n")
-            log_file.write(f"Total 404 errors: {total_404_errors}\n")
 
             # Log all HTTP status codes
             log_file.write("\nHTTP Status Codes Summary:\n")
             for code, count in status_codes_count.items():
                 log_file.write(f"HTTP {code}: {count} times\n")
 
+            # Log per-thread statistics
+            log_file.write("\nThread Statistics:\n")
+            for thread, count in thread_stats.items():
+                log_file.write(f"{thread} processed {count} URLs\n")
+
+            # Log the final queue size
+            queue_size = self.to_visit.qsize()  # Use thread-safe qsize()
+            log_file.write(f"\nSize of the PriorityQueue at program exit: {queue_size}\n")
+
+            # Log the final domain enqueued size
+            domain_enqueued_size = len(self.domain_enqueued)
+            log_file.write(f"Size of domain_enqueued at program exit: {domain_enqueued_size}\n")
+
         print(f"Log written to {log_filename}")
+
 
 def load_seeds(file_path, num_seeds=10):
     """
@@ -422,7 +475,8 @@ def load_seeds(file_path, num_seeds=10):
         # Randomly select seeds from the list
         return random.sample(seeds, num_seeds)
 
-def main(num_seeds=20, max_pages=1000):
+
+def main(num_seeds=20, max_pages=1000, num_threads=10):
     seeds_file_path = './data/nz_domain_seeds_list.txt'
     # seeds = [
     #     'https://www.mega.nz',
@@ -443,7 +497,7 @@ def main(num_seeds=20, max_pages=1000):
 
     crawler = WebCrawler(seeds)
     print("Web crawler initialized succesfully! Crawling...")
-    crawler.crawl_pages(max_pages=max_pages)
+    crawler.crawl_pages(max_pages=max_pages, num_threads=num_threads)
 
 
 def robot_parser_test():
@@ -455,11 +509,11 @@ def robot_parser_test():
     print(rp.can_fetch("*", 'https://www.gisborneherald.co.nz/'))
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     start_time = time.time()
 
     debug_mode = True
-    main(num_seeds=20, max_pages=5000)
+    main(num_seeds=20, max_pages=5000, num_threads=10)
 
     # robot_parser_test()
 
