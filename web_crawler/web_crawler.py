@@ -73,7 +73,19 @@ class WebCrawler:
         # self.to_visit = []
         self.to_visit = PriorityQueue()
         # Do not visit the extensions in the blacklist
-        self.blacklist_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', '.xls', '.xlsx'}
+        self.blacklist_extensions = {
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg',  # Image files
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt',  # Document files
+            '.zip', '.rar', '.tar', '.gz', '.7z', '.bz2',  # Compressed files
+            '.mp3', '.wav', '.ogg', '.aac', '.flac',  # Audio files
+            '.mp4', '.avi', '.mov', '.mkv', '.webm',  # Video files
+            '.exe', '.bin', '.dll', '.msi', '.sh', '.iso',  # Executable files
+            '.css', '.js', '.json', '.xml', '.rss',  # Web resources
+            '.ico', '.ttf', '.woff', '.woff2', '.eot',  # Font and icon files
+            '.swf', '.flv', '.fla',  # Flash files
+            '.php', '.aspx', '.cgi', '.py', '.pl', '.rb', '.jsp',  # Server-side scripts
+            '.dat', '.log', '.bak'  # Miscellaneous
+        }
         # object TLD
         self.domain = '.nz'
         self.url_counter = 0  # The number of URLs visited
@@ -104,13 +116,10 @@ class WebCrawler:
         """
         # Parse url and get its components
         parsed_url = urlparse(url)
-        # within .nz domain AND extension not in blacklist
+        # Check if URL is within the '.nz' domain
         is_within_domain = parsed_url.netloc.endswith(self.domain)
-        is_in_blacklist = False
-        for extension in self.blacklist_extensions:
-            if url.endswith(extension):
-                is_in_blacklist = True
-                break
+        # Check if the URL has an extension that is blacklisted
+        is_in_blacklist = any(url.lower().endswith(ext) for ext in self.blacklist_extensions)
         return is_within_domain and not is_in_blacklist
 
     def get_domain(self, url):
@@ -197,7 +206,7 @@ class WebCrawler:
             print(f"Failed to retrieve or parse robots.txt for {base_domain}: {e}")
             return None
 
-    def is_allowed_by_robots(self, url):
+    def is_allowed_by_robots(self, url, thread_id=0):
         """
         Check if the given URL is allowed to be crawled based on robots.txt rules.
         """
@@ -207,38 +216,40 @@ class WebCrawler:
         if rp:
             can_fetch = rp.can_fetch("*", url)
             # if debug_mode:
-            #     print(f"Robots.txt rule for {url}: {'Allowed' if can_fetch else 'Disallowed'}")
+            #     print(f"Thread-{thread_id}: Robots.txt rule for {url}: {'Allowed' if can_fetch else 'Disallowed'}")
             return can_fetch
 
-        if debug_mode:
-            print(f"No robots.txt found or failed to parse for {base_url}. Assuming allowed.")
+        # if debug_mode:
+        #     print(f"Thread-{thread_id}: No robots.txt found or failed to parse for {base_url}. Assuming allowed.")
         return True  # If no robots.txt, assume it's allowed
 
-    def download_page(self, url):
+    def download_page(self, url, thread_id=0):
         """
         If url is of type 'text/html', then download the HTML content.
         :param url: (str)
         :return: (tuple): (content, size, response_code)
         """
-        if not self.is_allowed_by_robots(url):
-            print(f"Blocked by robots.txt: {url}")
+        if not self.is_allowed_by_robots(url, thread_id):
+            print(f"Thread-{thread_id}: Blocked by robots.txt: {url}")
             return None, 0, None
-
-        # if debug_mode:
-        #     print(f"Attempting to download: {url}")
 
         try:
             time.sleep(1)  # Add delay between requests to avoid overloading the server
             response = requests.get(url, timeout=8)
-            if 'text/html' in response.headers['Content-Type']:
-                print(f"Successfully downloaded: {url}")
+            # Check if the Content-Type is text/html
+            content_type = response.headers.get('Content-Type', '').split(';')[0].strip()
+
+            if content_type == 'text/html':
+                print(f"Thread-{thread_id}: Successfully downloaded: {url}")
                 return response.text, len(response.content), response.status_code
             else:
-                print(f"Content type mismatch for {url}: {response.headers['Content-Type']}")
+                # If the MIME type is not text/html, skip processing this file
+                print(f"Thread-{thread_id}: Skipped (not text/html): {url} [MIME type: {content_type}]")
+                return None, 0, None
         except requests.exceptions.Timeout:
-            print(f"Timeout while trying to access {url}")
+            print(f"Thread-{thread_id}: Timeout while trying to access {url}")
         except Exception as e:
-            print(f"An error occurred when downloading {url}: {e}")
+            print(f"Thread-{thread_id}: An error occurred when downloading {url}: {e}")
         return None, 0, None
 
     def extract_links(self, page_content, base_url):
@@ -290,7 +301,7 @@ class WebCrawler:
             print(f"Error normalizing URL {url}: {e}")
             return url  # Return the original URL if normalization fails
 
-    def crawl_pages(self, max_pages=1000, num_threads=10):
+    def crawl_pages(self, max_pages=1000, num_threads=10, retry_limit=5, retry_delay=2):
         """
         Multithreaded BFS crawling with priority
         """
@@ -305,11 +316,20 @@ class WebCrawler:
 
         def thread_worker(thread_id):
             nonlocal thread_stats
-            while not self.to_visit.empty() and self.url_counter < max_pages:
+            retries = 0
+            while self.url_counter < max_pages and retries < retry_limit:
                 try:
-                    priority, queue_index, (url, depth) = self.to_visit.get(timeout=3)  # Get URL from priority queue
+                    # Try to get a URL from the queue with a timeout of 3 seconds
+                    priority, queue_index, (url, depth) = self.to_visit.get(timeout=3)
+                    retries = 0  # Reset retry count when a URL is found
                 except:
-                    break  # If queue is empty or timed out, exit the thread
+                    retries += 1
+                    print(f"Thread-{thread_id}: Queue empty, retrying {retries}/{retry_limit}...")
+                    if retries >= retry_limit:
+                        print(f"Thread-{thread_id}: Exceeded retry limit. Exiting...")
+                        break  # Exit the thread after reaching retry limit
+                    time.sleep(retry_delay)  # Wait before retrying
+                    continue  # Retry fetching from the queue
 
                 normalized_url = self.normalize_url(url)  # Normalize the URL first
 
@@ -323,7 +343,7 @@ class WebCrawler:
                     f"Queue Index: {queue_index}, Queue Size: {self.to_visit.qsize()}, URL: {normalized_url}")
 
                 # Download and process the page
-                page_content, size, status_code = self.download_page(normalized_url)
+                page_content, size, status_code = self.download_page(normalized_url, thread_id)
                 if not page_content:
                     if debug_mode:
                         print(f"Thread-{thread_id}: Failed to download page {normalized_url}. Skipping...")
@@ -410,7 +430,8 @@ class WebCrawler:
         Log the results of the crawl, including per-thread statistics.
         """
         total_pages = len(self.url_visited)
-        total_size = sum(info['size'] for info in self.url_visited.values())
+        total_size_bytes = sum(info['size'] for info in self.url_visited.values())
+        total_size_mb = total_size_bytes / (1024 * 1024)  # Convert bytes to megabytes
         total_time_taken = (datetime.now() - self.start_time).total_seconds()
 
         status_codes_count = {}  # For counting different HTTP status codes
@@ -439,7 +460,7 @@ class WebCrawler:
             log_file.write("======================================\n")
             log_file.write("Statistics:\n")
             log_file.write(f"Total pages crawled: {total_pages}\n")
-            log_file.write(f"Total size: {total_size} bytes\n")
+            log_file.write(f"Total size: {total_size_mb:.2f} MB\n")  # Total size in megabytes
             log_file.write(f"Total time taken: {total_time_taken:.2f} seconds\n")
 
             # Log all HTTP status codes
@@ -513,7 +534,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     debug_mode = True
-    main(num_seeds=20, max_pages=5000, num_threads=10)
+    main(num_seeds=20, max_pages=1000, num_threads=30)
 
     # robot_parser_test()
 
