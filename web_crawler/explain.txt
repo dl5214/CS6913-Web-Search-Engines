@@ -1,0 +1,58 @@
+# MultiThread Web Crawler
+
+## High Level Idea
+This is a primitive web crawler to crawl as much web pages from the nz top-level domain. The crawler starts from ~20 seed pages, visits and downloads pages (following Robots Exclusion Protocol), parses the html content and extract URLs, remove the repeated pages (while handling re-directing), and push them into a priority queue deciding which is the next page to crawl. Multi-Threading is also introduced with synchronization for better performance.
+
+
+## Data Structure and Variables
+
+### Overview
+The most essential part of the data structure consists of url_visited (a dictionary), domain_enqueued (a dictionary), and to_visit (a PriorityQueue).
+
+### Visiting Priority
+The priority is calculated in the following way:
+Considering 3 factors:
+1. How many times the domain has been visited. (larger number -> lower priority)
+2. How many times the domain has been referenced from other domains, namely, in-degree. (larger number -> more popular -> higher priority)
+3. How many times the second-last domain (e.g. com, net, org, co, etc.) has been visited. (larger number -> lower priority)
+And the final priority is calculated by weighing the above factors in 47, 13, 29 (prime numbers so that more likely different combinations yields different results, can be changed, not theoretically optimized), and that's the key of the priority queue.
+
+### Global Variables (declared in __init__)
+url_visited: (dict) Store the info (time, status code, redirects, etc.) of our desired data
+domain_enqueued: (dict) key: domain, value: {enqueue_count: int, in_degree: int}. Storage how many times the domain has been referred and of which how many times are referenced from different domains (excluding self-reference within same domain).
+to_visit: (PriorityQueue) The (unique) crawled pages ranking by priority calculated above. Contents: priority, queue_index, (url, depth, priority_1, priority_2, priority_3)
+seeds_urls: (set) for logger to record seed pages
+visited_and_redirected_urls_minimized: (set) Record the visited URLs (including redirected ones, removing http:// or https://, www, and the slash at the end) in a minimized-normalized way, to avoid repetitive access.
+url_enqueued_minimized: (set) Record the previously enqueued URLs in a way similar to the previous one.
+second_last_domain_visited: (dict) (key: second-last domain, value: visited count) Used to calculate the third factor of priority.
+robots_parsers = {} (dict) Store robot parsers for each domain and avoid duplicated fetching.
+counters and locks: to maintain the FIFO property if the priority are same (not necessary), and for better debug and logging info. Locks are used to prevent racing conditions under multi-thread situations.
+
+All functions have DocString to introduce their functionality, parameters and returns.
+
+
+## Work Flow for thread_worker:
+1. Extract a URL from the PriorityQueue (with retry mechanism if the Queue is empty)
+2. Normalize (remove query params) and minimize (remove https://www and end-slash) the URLs and store in different local variables
+3. Extract the domain from the URL being visited, combined with the second-last domain. Update the dictionaries with synchronization.
+4. Check whether the minimized URL has been visited. Skip if visited, otherwise update the visited set. Also update the counter.
+5. Downloading the page (including parsing /robots.txt) and get the contents, size, and status_code. Check whether the final url is redirected. If so, record and also add the redirected URL to visited set. Also treat the redirected URLs as previously enqueued, so update the enqueued set.
+6. Update url_visited with synchronization.
+7. Extract and parse the links in the downloaded page.
+8. Remove the repetitive links after normalization.
+9. For each normalized link:
+i. Check whether it's valid (allowed by /robots.txt and extension not in blacklist)
+ii. Check whether it's visited or enqueued before
+iii. Update counters and sets.
+iv. Calculate the overall priority score before enqueueing
+v. Push the link into Priority Queue and update enqueued set
+10. Update counters and print debug messages
+
+
+## Fascinating Features:
+1. Multi-threading with synchronization
+2. Complex priority score calculation
+3. URL Forwarding handling: treat the re-directed URLs as previously enqueued and visited, avoiding visiting the same page
+4. Courtesy: set up a minimum visiting time interval between two visits on the same domain, with waiting mechanism
+5. Timeout Exception catching: The crawler will not stuck for too long if the server has no response (no status_code acquired).
+ 

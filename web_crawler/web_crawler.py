@@ -317,7 +317,7 @@ class WebCrawler:
             elif second_last_count <= 6:
                 return 4
             elif second_last_count <= 15:
-                return 6
+                return 5
             elif second_last_count <= 50:
                 return 6
             elif second_last_count <= 600:
@@ -905,7 +905,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     debug_mode = True
-    main(num_seeds=20, max_pages=20000, num_threads=30)
+    main(num_seeds=20, max_pages=200, num_threads=30)
 
     end_time = time.time()
     duration = end_time - start_time
