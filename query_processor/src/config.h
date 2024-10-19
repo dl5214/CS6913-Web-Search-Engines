@@ -30,8 +30,8 @@
 //#define FILEMODE 1 // 0: ASCII, 1: BIN
 
 #define DEBUG_MODE 1
-#define INDEX_FLAG 1 //whether build index
-#define MERGE_FLAG 1 //whether merge index
+#define INDEX_FLAG 1 //whether to build intermediate index
+#define MERGE_FLAG 1 //whether to merge index
 #define PAGE_TABLE_FLAG 1 //whether write Page Table
 #define LEXICON_FLAG 1 //whether write Lexicon Structure
 #define DELETE_INTERMEDIATE 0

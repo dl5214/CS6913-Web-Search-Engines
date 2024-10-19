@@ -17,7 +17,7 @@ int main() {
     if (MERGE_FLAG) {
         cout << "Merging inverted index. Timing started..." << endl;
         clock_t merge_start = clock();
-        index_builder.mergeIndexToOne();
+        index_builder.mergeIndex();
         clock_t merge_end = clock();
         double merge_time = double(merge_end - merge_start) / 1000000;
         cout << "Merging inverted index DONE." << endl;

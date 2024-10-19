@@ -6,11 +6,14 @@
 #include <queue>
 #include <vector>
 #include <tuple>
+#include <sstream>
 
-// Structure to compare two words in the priority queue
-struct Compare {
-    bool operator()(const tuple<string, uint32_t, ifstream*>& a, const tuple<string, uint32_t, ifstream*>& b) {
-        return get<0>(a) > get<0>(b);  // Compare the word strings (lexicographically)
+
+// Struct for comparing entries in the priority queue (min-heap)
+struct ComparePosting {
+    bool operator()(const tuple<string, ifstream*, vector<pair<uint32_t, uint32_t>>>& a,
+                    const tuple<string, ifstream*, vector<pair<uint32_t, uint32_t>>>& b) const {
+        return get<0>(a) > get<0>(b);  // Compare by word, ascending order
     }
 };
 
@@ -198,112 +201,155 @@ void IndexBuilder::read_data(const char *filepath) {
     infile.close();  // Close the file stream
 }
 
-// Merges two inverted index files (fileIndex1 and fileIndex2) into one
-void IndexBuilder::mergeIndex(uint32_t fileIndex1, uint32_t fileIndex2) {
-    string dst_mergePath = _InvertedList.getIndexFilePath();  // Destination file path for merged index
-    ifstream infile1;
-    ifstream infile2;
-    ofstream outfile;
-    string file1 = _InvertedList.getIndexFilePath(fileIndex1);
-    string file2 = _InvertedList.getIndexFilePath(fileIndex2);
-
-    // Open files in binary or text mode depending on the file mode
-    if (FILEMODE_BIN) {  // FILEMODE == BIN
-        infile1.open(file1, ifstream::binary);
-        infile2.open(file2, ifstream::binary);
-        outfile.open(dst_mergePath, ofstream::binary);
+// N-way merge logic with support for binary and ASCII modes
+// Helper function to parse postings from a string
+vector<pair<uint32_t, uint32_t>> IndexBuilder::parsePostings(const string& postingsStr) {
+    vector<pair<uint32_t, uint32_t>> postings;
+    istringstream iss(postingsStr);
+    uint32_t docID, freq;
+    char separator;
+    while (iss >> docID >> freq) {
+        postings.emplace_back(docID, freq);
+        iss >> separator;  // To consume the separator (',') between postings
     }
-    else {  // FILEMODE == ASCII)
-        infile1.open(file1);
-        infile2.open(file2);
+    return postings;
+}
+
+// Helper function to write merged postings to output, ensuring correct handling for single postings
+void IndexBuilder::writeMergedPostings(ofstream& outfile, const string& word, const vector<pair<uint32_t, uint32_t>>& postings) {
+    if (!postings.empty()) {  // Ensure that we only write non-empty posting lists
+        outfile << word << ":";
+        for (size_t i = 0; i < postings.size(); ++i) {
+            if (i > 0) {
+                outfile << ",";
+            }
+            outfile << postings[i].first << " " << postings[i].second;
+        }
+        outfile << endl;  // Write the newline to properly terminate the entry
+    }
+}
+
+// Merges postings with the same docID, ensuring no postings are lost
+void IndexBuilder::mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, const vector<pair<uint32_t, uint32_t>>& newPostings) {
+    size_t i = 0, j = 0;
+    vector<pair<uint32_t, uint32_t>> merged;
+
+    // Merge two posting lists by combining same docID and summing frequencies
+    while (i < base.size() && j < newPostings.size()) {
+        if (base[i].first == newPostings[j].first) {
+            // Combine postings with the same docID by summing frequencies
+            merged.emplace_back(base[i].first, base[i].second + newPostings[j].second);
+            i++;
+            j++;
+        } else if (base[i].first < newPostings[j].first) {
+            // Posting in base appears first, add it to merged list
+            merged.push_back(base[i]);
+            i++;
+        } else {
+            // Posting in newPostings appears first, add it to merged list
+            merged.push_back(newPostings[j]);
+            j++;
+        }
+    }
+
+    // Add remaining postings from both lists
+    while (i < base.size()) {
+        merged.push_back(base[i]);
+        i++;
+    }
+    while (j < newPostings.size()) {
+        merged.push_back(newPostings[j]);
+        j++;
+    }
+
+    // Replace the base list with the merged result
+    base.swap(merged);
+}
+
+// Multi-way merge function with improved comparison and handling of missing postings
+void IndexBuilder::mergeIndex() {
+    uint32_t leftIndexNum = _InvertedList.indexFileNum;  // Number of intermediate index files
+    cout << "Number of intermediate index files: " << leftIndexNum << endl;
+
+    // Priority queue for multi-way merge
+    priority_queue<tuple<string, ifstream*, vector<pair<uint32_t, uint32_t>>>,
+            vector<tuple<string, ifstream*, vector<pair<uint32_t, uint32_t>>>>,
+            ComparePosting> pq;
+
+    vector<ifstream> inputStreams(leftIndexNum);
+
+    // Open all intermediate files and add the first word from each file into the priority queue
+    for (uint32_t i = 0; i < leftIndexNum; ++i) {
+        string path = _InvertedList.getIndexFilePath(i);
+        inputStreams[i].open(path, FILEMODE_BIN ? ifstream::binary : ifstream::in);
+        if (!inputStreams[i].is_open()) {
+            cerr << "Error opening file: " << path << endl;
+            return;
+        }
+
+        string line;
+        if (getline(inputStreams[i], line)) {
+            size_t colonPos = line.find(":");
+            string word = line.substr(0, colonPos);
+            string postingsStr = line.substr(colonPos + 1);
+            vector<pair<uint32_t, uint32_t>> postings = parsePostings(postingsStr);
+            pq.emplace(word, &inputStreams[i], postings);
+        }
+    }
+
+    // Open output file for final merged index
+    ofstream outfile;
+    string dst_mergePath = _InvertedList.getIndexFilePath();  // Output final index file path
+    if (FILEMODE_BIN) {
+        outfile.open(dst_mergePath, ofstream::binary);
+    } else {
         outfile.open(dst_mergePath);
     }
 
-    string line1, line2;
-    string word1, word2;
-    while (infile1 && infile2) {
-        // If both words are empty, read a line from each file
-        if (word1.empty() && word2.empty()) {
-            getline(infile1, line1);
-            getline(infile2, line2);
-            word1 = line1.substr(0, line1.find(":"));
-            word2 = line2.substr(0, line2.find(":"));
-        }
-        // If the words are the same, merge the two inverted lists
-        if (word1.compare(word2) == 0) {
-            // merge word1 and word2
-            string arr1 = line1.substr(line1.find(":") + 1);
-            string arr2 = line2.substr(line2.find(":") + 1);
-            string docID1 = arr1.substr(0, arr1.find(" "));
-            string docID2 = arr2.substr(0, arr2.find(" "));
-            if (docID1 < docID2) {
-                outfile << word1 << ":" << arr1 << "," << arr2 << endl;
+    // Process the priority queue (min-heap)
+    while (!pq.empty()) {
+        auto [word, infile, postings] = pq.top();
+        pq.pop();
+
+        // Merge postings from other files with the same word
+        while (!pq.empty() && get<0>(pq.top()) == word) {
+            auto [nextWord, nextInfile, nextPostings] = pq.top();
+            pq.pop();
+            mergePostingLists(postings, nextPostings);  // Merge postings for the same word
+
+            // Read next entry from that file and push it into the queue
+            string line;
+            if (getline(*nextInfile, line)) {
+                size_t colonPos = line.find(":");
+                string newWord = line.substr(0, colonPos);
+                string postingsStr = line.substr(colonPos + 1);
+                vector<pair<uint32_t, uint32_t>> newPostings = parsePostings(postingsStr);
+                pq.emplace(newWord, nextInfile, newPostings);
             }
-            else {
-                outfile << word1 << ":" << arr2 << "," << arr1 << endl;
-            }
+        }
 
-            // update line1 and line2
-            getline(infile1, line1);
-            getline(infile2, line2);
-            word1 = line1.substr(0, line1.find(":"));
-            word2 = line2.substr(0, line2.find(":"));
-        }
-        // If word1 is smaller, write word1's data and move to the next line
-        else if (word1.compare(word2) < 0) {
-            // write line1 only
-            outfile << line1 << endl;
-            // update line1
-            getline(infile1, line1);
-            word1 = line1.substr(0, line1.find(":"));
-        }
-        // If word2 is smaller, write word2's data and move to the next line
-        else {
-            // write line2 only
-            outfile << line2 << endl;
-            // update line2
-            getline(infile2, line2);
-            word2 = line2.substr(0, line2.find(":"));
+        // Write merged postings to output file
+        writeMergedPostings(outfile, word, postings);
+
+        // Read next entry from the current file and push it into the queue
+        string line;
+        if (getline(*infile, line)) {
+            size_t colonPos = line.find(":");
+            string newWord = line.substr(0, colonPos);
+            string postingsStr = line.substr(colonPos + 1);
+            vector<pair<uint32_t, uint32_t>> newPostings = parsePostings(postingsStr);
+            pq.emplace(newWord, infile, newPostings);
         }
     }
 
-    // Write any remaining data from either file
-    if (infile1) {
-        outfile << line1 << endl;
-    }
-    if (infile2) {
-        outfile << line2 << endl;
+    // Close all input streams
+    for (auto& inputStream : inputStreams) {
+        if (inputStream.is_open()) {
+            inputStream.close();
+        }
     }
 
-    while (infile1) {
-        getline(infile1, line1);
-        outfile << line1 << endl;
-    }
-    while (infile2) {
-        getline(infile2, line2);
-        outfile << line2 << endl;
-    }
-    infile1.close();
-    infile2.close();
-    outfile.close();
-}
-
-// Merges all index files into a single index
-void IndexBuilder::mergeIndexToOne() {
-    uint32_t mergedIndexNum = 0;
-    uint32_t leftIndexNum;
-    cout<< "Number of intermediate index files: " << _InvertedList.indexFileNum << endl;  // Print the number of index files
-    // Continue merging index files until only two remain
-    while ((leftIndexNum = _InvertedList.indexFileNum - mergedIndexNum) > 2) {
-        mergeIndex(mergedIndexNum, mergedIndexNum + 1);  // Merge pairs of index files
-        mergedIndexNum += 2;  // Update the number of merged files
-    }
-    // If there are two remaining index files, build the final lexicon
-    if (leftIndexNum == 2) {
-        string path1 = _InvertedList.getIndexFilePath(mergedIndexNum);
-        string path2 = _InvertedList.getIndexFilePath(mergedIndexNum + 1);
-        _Lexicon.Build(path1, path2);  // Build lexicon from the last two files
-    }
+    outfile.close();  // Close the output file
 }
 
 // Writes the page table to disk
