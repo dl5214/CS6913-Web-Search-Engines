@@ -79,7 +79,7 @@ private:
     uint32_t calcWordFreq(string, uint32_t);  // Calculate (word,Freq) in TEXT
 
     vector<pair<uint32_t, uint32_t>> parsePostings(const string& postingsStr);  // Parse postings from a string
-    void mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, const vector<pair<uint32_t, uint32_t>>& newPostings);  // Merge posting lists for a given word
+    void mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, const vector<pair<uint32_t, uint32_t>>& newPostings, bool ordered);  // Merge posting lists for a given word
     void writeMergedPostings(ofstream& outfile, const string& word, const vector<pair<uint32_t, uint32_t>>& postings);  // Write merged postings to file
 
 public:

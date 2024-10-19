@@ -17,7 +17,7 @@ InvertedList::InvertedList() {
 
     // if folder exist,delete old file;
     // else create
-    string IndexFoldPath = INDEX_FILE_FOLDER_PATH;
+    string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
 
     if (filesystem::exists(IndexFoldPath)) {
         if (!clearIndexFolder(false)) {
@@ -38,12 +38,12 @@ InvertedList::~InvertedList() {
 }
 
 bool InvertedList::creatIndexFolder() {
-    string IndexFoldPath = INDEX_FILE_FOLDER_PATH;
+    string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
     return filesystem::create_directory(IndexFoldPath);
 }
 
 bool InvertedList::clearIndexFolder(bool deleteFolder) {
-    string IndexFoldPath = INDEX_FILE_FOLDER_PATH;
+    string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
     for (const auto &entry : filesystem::directory_iterator(IndexFoldPath)) {
         if (!filesystem::is_directory(entry.path())) {
             if (!filesystem::remove(entry.path())) {
@@ -59,7 +59,7 @@ bool InvertedList::clearIndexFolder(bool deleteFolder) {
 
 void InvertedList::countIndexFileNum() {
     indexFileNum = 0;
-    string IndexFoldPath = INDEX_FILE_FOLDER_PATH;
+    string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
     for (const auto &entry : filesystem::directory_iterator(IndexFoldPath)) {
         if (!filesystem::is_directory(entry.path())) {
             indexFileNum += 1;
@@ -106,22 +106,33 @@ string InvertedList::getIndexFilePath() {
     indexFileNum += 1;
 
     if (FILEMODE_BIN){  // FILEMODE == BIN
-        return string(INDEX_FILE_FOLDER_PATH) + "BIN_" + to_string(indexFileNum - 1) + ".bin";
+        return string(INTERMEDIATE_INDEX_PATH) + "BIN_" + to_string(indexFileNum - 1) + ".bin";
     }
     else {  // FILEMODE == ASCII
-        return string(INDEX_FILE_FOLDER_PATH) + "ASCII_" + to_string(indexFileNum - 1) + ".txt";
+        return string(INTERMEDIATE_INDEX_PATH) + "ASCII_" + to_string(indexFileNum - 1) + ".txt";
     }
 }
 
 string InvertedList::getIndexFilePath(uint32_t fileNum) {
     if (FILEMODE_BIN){  // FILEMODE == FILEMODE_BIN
-        return string(INDEX_FILE_FOLDER_PATH) + "BIN_" + to_string(fileNum) + ".bin";
+        return string(INTERMEDIATE_INDEX_PATH) + "BIN_" + to_string(fileNum) + ".bin";
     }
     else {  // FILEMODE == ASCII
-        return string(INDEX_FILE_FOLDER_PATH) + "ASCII_" + to_string(fileNum) + ".txt";
+        return string(INTERMEDIATE_INDEX_PATH) + "ASCII_" + to_string(fileNum) + ".txt";
     }
 
 }
+
+//// Function to get the path for the final index file
+//string InvertedList::getFinalIndexFilePath() {
+//    // Generate final index file path in ../data/ directory
+//    if (FILEMODE_BIN) {  // FILEMODE == BIN
+//        return string("../data/inverted_index.bin");
+//    }
+//    else {  // FILEMODE == ASCII
+//        return string("../data/inverted_index.txt");
+//    }
+//}
 
 void InvertedList::Write()
 {

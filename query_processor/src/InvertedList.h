@@ -20,6 +20,7 @@ public:
     ~InvertedList();
     string getIndexFilePath();
     string getIndexFilePath(uint32_t);
+//    string getFinalIndexFilePath();
     void Insert(string,uint32_t,uint32_t);
     void Clear();
     void Write();

@@ -12,7 +12,7 @@
 #include <utility>
 
 #define DATA_SOURCE_PATH "../data/collection_debug.tsv"
-#define INDEX_FILE_FOLDER_PATH "../data/intermediate_index/"
+#define INTERMEDIATE_INDEX_PATH "../data/intermediate_index/"
 #define FINAL_INDEX_PATH "../data/index.idx"
 #define LEXICON_PATH "../data/lexicon.lex"
 #define PAGE_TABLE_PATH "../data/PageTable.pt"
@@ -30,7 +30,7 @@
 //#define FILEMODE 1 // 0: ASCII, 1: BIN
 
 #define DEBUG_MODE 1
-#define INDEX_FLAG 1 //whether to build intermediate index
+#define INDEX_FLAG 0 //whether to build intermediate index
 #define MERGE_FLAG 1 //whether to merge index
 #define PAGE_TABLE_FLAG 1 //whether write Page Table
 #define LEXICON_FLAG 1 //whether write Lexicon Structure

@@ -164,7 +164,7 @@ void IndexBuilder::read_data(const char *filepath) {
                         }
                     }
                 }
-                catch (const std::invalid_argument &e) {
+                catch (const invalid_argument &e) {
                     cerr << "Error parsing docID: " << e.what() << " in line: " << docContent << endl;
                     continue;
                 }
@@ -230,23 +230,26 @@ void IndexBuilder::writeMergedPostings(ofstream& outfile, const string& word, co
 }
 
 // Merges postings with the same docID, ensuring no postings are lost
-void IndexBuilder::mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, const vector<pair<uint32_t, uint32_t>>& newPostings) {
+void IndexBuilder::mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, const vector<pair<uint32_t, uint32_t>>& newPostings, bool ordered) {
+    if (ordered && !base.empty() && !newPostings.empty() && base.back().first < newPostings.front().first) {
+        // Append the newPostings directly if they are all larger than the ones in base
+        base.insert(base.end(), newPostings.begin(), newPostings.end());
+        return;
+    }
+
+    // Regular merging logic if the lists are not strictly ordered
     size_t i = 0, j = 0;
     vector<pair<uint32_t, uint32_t>> merged;
 
-    // Merge two posting lists by combining same docID and summing frequencies
     while (i < base.size() && j < newPostings.size()) {
         if (base[i].first == newPostings[j].first) {
-            // Combine postings with the same docID by summing frequencies
             merged.emplace_back(base[i].first, base[i].second + newPostings[j].second);
             i++;
             j++;
         } else if (base[i].first < newPostings[j].first) {
-            // Posting in base appears first, add it to merged list
             merged.push_back(base[i]);
             i++;
         } else {
-            // Posting in newPostings appears first, add it to merged list
             merged.push_back(newPostings[j]);
             j++;
         }
@@ -262,7 +265,6 @@ void IndexBuilder::mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, con
         j++;
     }
 
-    // Replace the base list with the merged result
     base.swap(merged);
 }
 
@@ -299,7 +301,8 @@ void IndexBuilder::mergeIndex() {
 
     // Open output file for final merged index
     ofstream outfile;
-    string dst_mergePath = _InvertedList.getIndexFilePath();  // Output final index file path
+//    string dst_mergePath = _InvertedList.getIndexFilePath();  // Output final index file path
+    string dst_mergePath = FINAL_INDEX_PATH;
     if (FILEMODE_BIN) {
         outfile.open(dst_mergePath, ofstream::binary);
     } else {
@@ -315,7 +318,7 @@ void IndexBuilder::mergeIndex() {
         while (!pq.empty() && get<0>(pq.top()) == word) {
             auto [nextWord, nextInfile, nextPostings] = pq.top();
             pq.pop();
-            mergePostingLists(postings, nextPostings);  // Merge postings for the same word
+            mergePostingLists(postings, nextPostings, true);  // Merge postings for the same word
 
             // Read next entry from that file and push it into the queue
             string line;
