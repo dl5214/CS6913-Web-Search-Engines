@@ -5,8 +5,8 @@
 using namespace std;
 
 void Document::print() const {
-    cout << "docID:" << docID << " docNO:" << docNO << " dataLen:" << dataLen
-//    << " url:" << url <<
+    cout << "docID:" << docID << " dataLen:" << dataLen
+//    << " docNO:" << docNO << " url:" << url
     << " wordnums:" << wordnums << endl;
 }
 
@@ -26,13 +26,21 @@ void PageTable::Write() {
     ofstream outfile;
     string path;
 
+    // Adjust the path to include the "_BIN" or "_ASCII" suffix before the file name, not within the directory structure
     if (FILEMODE_BIN) {  // FILEMODE == BIN
-        path = "BIN_" + string(PAGE_TABLE_PATH);
-        outfile.open(path,ofstream::binary);
+        path = string(PAGE_TABLE_PATH).substr(0, string(PAGE_TABLE_PATH).find_last_of('/')) + "/BIN_" + string(PAGE_TABLE_PATH).substr(string(PAGE_TABLE_PATH).find_last_of('/') + 1);
+        outfile.open(path, ofstream::binary);
     }
     else {  // FILEMODE == ASCII
-        path = "ASCII_" + string(PAGE_TABLE_PATH);
+        path = string(PAGE_TABLE_PATH).substr(0, string(PAGE_TABLE_PATH).find_last_of('/')) + "/ASCII_" + string(PAGE_TABLE_PATH).substr(string(PAGE_TABLE_PATH).find_last_of('/') + 1);
         outfile.open(path);
+    }
+
+    // Check for errors while opening the file
+    if (!outfile.is_open()) {
+        cerr << "Error opening output file: " << path << endl;
+        cerr << "Errno: " << errno << ", Error: " << strerror(errno) << endl;
+        return;
     }
 
 //    for (vector<Document>::iterator iter = _PageTable.begin();
@@ -41,8 +49,8 @@ void PageTable::Write() {
 //                << iter->wordnums << " " << iter->url << " " << endl;
 //    }
     for (const auto& doc : _PageTable) {
-        outfile << doc.docID << " " << doc.docNO << " " << doc.dataLen << " " << doc.wordnums << " "
-//                << doc.url << " "
+        outfile << doc.docID << " " << doc.dataLen << " " << doc.wordnums << " "
+//               << " " << doc.docNO << doc.url << " "
                 << endl;
     }
 

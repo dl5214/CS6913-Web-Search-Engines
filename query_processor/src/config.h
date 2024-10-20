@@ -13,6 +13,7 @@
 
 #define DATA_SOURCE_PATH "../data/collection_debug.tsv"
 #define INTERMEDIATE_INDEX_PATH "../data/intermediate_index/"
+#define MERGED_INDEX_PATH "../data/index_no_compress.txt"
 #define FINAL_INDEX_PATH "../data/index.idx"
 #define LEXICON_PATH "../data/lexicon.lex"
 #define PAGE_TABLE_PATH "../data/PageTable.pt"
@@ -25,14 +26,14 @@
 
 #define INDEX_CHUNK_SIZE (20 * 1024 * 1024) //20MB
 //#define FILEMODE_ASCII 0
-#define FILEMODE_BIN 0 // 0: ASCII, 1: BIN
+#define FILEMODE_BIN 1 // 0: ASCII, 1: BIN
 
 //#define FILEMODE 1 // 0: ASCII, 1: BIN
 
 #define DEBUG_MODE 1
-#define INDEX_FLAG 0 //whether to build intermediate index
-#define MERGE_FLAG 1 //whether to merge index
+#define INDEX_FLAG 1 //whether to build intermediate index
 #define PAGE_TABLE_FLAG 1 //whether write Page Table
+#define MERGE_FLAG 1 //whether to merge index
 #define LEXICON_FLAG 1 //whether write Lexicon Structure
 #define DELETE_INTERMEDIATE 0
 

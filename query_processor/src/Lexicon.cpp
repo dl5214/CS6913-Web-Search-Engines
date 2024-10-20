@@ -2,6 +2,7 @@
 // Created by Dong Li on 10/16/24.
 //
 #include "Lexicon.h"
+#include <sys/stat.h>
 using namespace std;
 
 // Function to encode a uint32 value using Varbyte encoding
@@ -45,17 +46,14 @@ void LexiconItem::update(uint32_t bgp, uint32_t edp, uint32_t dn) {
 }
 
 Lexicon::Lexicon() {
+    // Adjust the paths to include the "_BIN" or "_ASCII" suffix before the file name, not within the directory structure
     if (FILEMODE_BIN) {  // FILEMODE == BIN
-        LexiconPath = "BIN_" + string(LEXICON_PATH);
-        IndexPath = "BIN_" + string(FINAL_INDEX_PATH);
+        LexiconPath = string(LEXICON_PATH).substr(0, string(LEXICON_PATH).find_last_of('/')) + "/BIN_" + string(LEXICON_PATH).substr(string(LEXICON_PATH).find_last_of('/') + 1);
+        IndexPath = string(FINAL_INDEX_PATH).substr(0, string(FINAL_INDEX_PATH).find_last_of('/')) + "/BIN_" + string(FINAL_INDEX_PATH).substr(string(FINAL_INDEX_PATH).find_last_of('/') + 1);
+    } else {  // FILEMODE == ASCII
+        LexiconPath = string(LEXICON_PATH).substr(0, string(LEXICON_PATH).find_last_of('/')) + "/ASCII_" + string(LEXICON_PATH).substr(string(LEXICON_PATH).find_last_of('/') + 1);
+        IndexPath = string(FINAL_INDEX_PATH).substr(0, string(FINAL_INDEX_PATH).find_last_of('/')) + "/ASCII_" + string(FINAL_INDEX_PATH).substr(string(FINAL_INDEX_PATH).find_last_of('/') + 1);
     }
-    else {  // FILEMODE == ASCII
-        LexiconPath = "ASCII_" + string(LEXICON_PATH);
-        IndexPath = "ASCII_" + string(FINAL_INDEX_PATH);
-    }
-
-//    LexiconPath = (FILEMODE == FILEMODE_ASCII) ? "ASCII_" + string(LEXICON_PATH) : "BIN_" + string(LEXICON_PATH);
-//    IndexPath = (FILEMODE == FILEMODE_ASCII) ? "ASCII_" + string(FINAL_INDEX_PATH) : "BIN_" + string(FINAL_INDEX_PATH);
 }
 
 Lexicon::~Lexicon() {
@@ -68,7 +66,7 @@ uint32_t Lexicon::calcDocNum(string idxWordList) {
             spaceNum += 1;
         }
     }
-    return (spaceNum + 1) / 2;
+    return (spaceNum + 1) / 2;  // Each word will have one space between docID and freq
 }
 
 bool Lexicon::Insert(string word, uint32_t beginp, uint32_t endp, uint32_t docNum) {
@@ -134,264 +132,341 @@ uint32_t Lexicon::WriteBitArray(string arr, ofstream &outfile) {
     return docNum;
 }
 
-void Lexicon::Build(string path1, string path2) {
-    ifstream infile1;
-    ifstream infile2;
+//void Lexicon::Build(string path1, string path2) {
+//    ifstream infile1;
+//    ifstream infile2;
+//    ofstream outfile;
+//
+//    if (FILEMODE_BIN) {  // FILEMODE == BIN
+//        infile1.open(path1, ifstream::binary);
+//        infile2.open(path2, ifstream::binary);
+//        outfile.open(IndexPath, ofstream::binary);
+//        uint32_t beginp, endp;
+//
+//        string line1, line2;
+//        string word1, word2;
+//
+//        while (infile1 && infile2) {
+//            if (word1.empty() && word2.empty()) {
+//                beginp = outfile.tellp();
+//                getline(infile1, line1);
+//                getline(infile2, line2);
+//                word1 = line1.substr(0, line1.find(":"));
+//                word2 = line2.substr(0, line2.find(":"));
+//            }
+//            if (word1.compare(word2) == 0) {
+//                // merge word1 and word2
+//                string arr1 = line1.substr(line1.find(":") + 1);
+//                string arr2 = line2.substr(line2.find(":") + 1);
+//                string docID1 = arr1.substr(0, arr1.find(" "));
+//                string docID2 = arr2.substr(0, arr2.find(" "));
+//                if (arr1.empty() || arr2.empty()) {
+//                    break;
+//                }
+//                uint32_t docNum1, docNum2;
+//
+//                if (docID1 < docID2) {
+//                    docNum1 = WriteBitArray(arr1, outfile);
+//                    docNum2 = WriteBitArray(arr2, outfile);
+//                }
+//                else {
+//                    docNum2 = WriteBitArray(arr2, outfile);
+//                    docNum1 = WriteBitArray(arr1, outfile);
+//                }
+//
+//                // update Lexicon
+//                endp = outfile.tellp();
+//                Insert(word1, beginp, endp, docNum1 + docNum2);
+//                beginp = endp;
+//
+//                // update line1 and line2
+//                getline(infile1, line1);
+//                getline(infile2, line2);
+//                word1 = line1.substr(0, line1.find(":"));
+//                word2 = line2.substr(0, line2.find(":"));
+//            }
+//            else if (word1.compare(word2) < 0) {
+//                string arr1 = line1.substr(line1.find(":") + 1);
+//                if (arr1.empty()) {
+//                    break;
+//                }
+//
+//                // write line1 only
+//                uint32_t docNum = WriteBitArray(arr1, outfile);
+//
+//                // update Lexicon
+//                endp = outfile.tellp();
+//                Insert(word1, beginp, endp, docNum);
+//                beginp = endp;
+//
+//                // update line1
+//                getline(infile1, line1);
+//                word1 = line1.substr(0, line1.find(":"));
+//            }
+//            else {
+//                string arr2 = line2.substr(line2.find(":") + 1);
+//                if (arr2.empty())
+//                    break;
+//
+//                // write line2 only
+//                uint32_t docNum = WriteBitArray(arr2, outfile);
+//
+//                // update Lexicon
+//                endp = outfile.tellp();
+//                Insert(word2, beginp, endp, docNum);
+//                beginp = endp;
+//
+//                // update line2
+//                getline(infile2, line2);
+//                word2 = line2.substr(0, line2.find(":"));
+//            }
+//        }
+//
+//        if (infile1) {
+//            string arr1 = line1.substr(line1.find(":") + 1);
+//            if (!arr1.empty()) {
+//                uint32_t docNum = WriteBitArray(arr1, outfile);
+//
+//                // update Lexicon
+//
+//                endp = outfile.tellp();
+//                Insert(word1, beginp, endp, docNum);
+//                beginp = endp;
+//            }
+//        }
+//        if (infile2) {
+//            string arr2 = line2.substr(line2.find(":") + 1);
+//            if (!arr2.empty()) {
+//                uint32_t docNum = WriteBitArray(arr2, outfile);
+//
+//                // update Lexicon
+//                if (docNum != -1) {
+//                    endp = outfile.tellp();
+//                    Insert(word2, beginp, endp, docNum);
+//                    beginp = endp;
+//                }
+//            }
+//        }
+//
+//        while (infile1) {
+//            string arr1 = line1.substr(line1.find(":") + 1);
+//            if (arr1.empty()) {
+//                break;
+//            }
+//            getline(infile1, line1);
+//
+//            uint32_t docNum = WriteBitArray(arr1, outfile);
+//
+//            // update Lexicon
+//            if (docNum != -1) {
+//                break;
+//            }
+//            endp = outfile.tellp();
+//            Insert(word1, beginp, endp, docNum);
+//            beginp = endp;
+//        }
+//        while (infile2) {
+//            string arr2 = line2.substr(line2.find(":") + 1);
+//            if (arr2.empty()) {
+//                break;
+//            }
+//
+//            getline(infile2, line2);
+//
+//            uint32_t docNum = WriteBitArray(arr2, outfile);
+//
+//            // update Lexicon
+//            endp = outfile.tellp();
+//            Insert(word2, beginp, endp, docNum);
+//            beginp = endp;
+//        }
+//    }
+//
+//    else {  // FILEMODE == ASCII
+//        infile1.open(path1);
+//        infile2.open(path2);
+//        outfile.open(IndexPath);
+//        string line1, line2;
+//        string word1, word2;
+//        uint32_t beginp, endp;
+//
+//        while (infile1 && infile2) {
+//            if (word1.empty() && word2.empty()) {
+//                beginp = outfile.tellp();
+//                getline(infile1, line1);
+//                getline(infile2, line2);
+//                word1 = line1.substr(0, line1.find(":"));
+//                word2 = line2.substr(0, line2.find(":"));
+//            }
+//            if (word1.compare(word2) == 0) {
+//                // merge word1 and word2
+//                string arr1 = line1.substr(line1.find(":") + 1);
+//                string arr2 = line2.substr(line2.find(":") + 1);
+//                string docID1 = arr1.substr(0, arr1.find(" "));
+//                string docID2 = arr2.substr(0, arr2.find(" "));
+//                if (docID1 < docID2) {
+//                    outfile << word1 << ":" << arr1 << "," << arr2 << endl;
+//                }
+//                else {
+//                    outfile << word1 << ":" << arr2 << "," << arr1 << endl;
+//                }
+//
+//                // update Lexicon
+//                endp = outfile.tellp();
+//                Insert(word1, beginp, endp, calcDocNum(arr1) + calcDocNum(arr2));
+//                beginp = endp;
+//
+//                // update line1 and line2
+//                getline(infile1, line1);
+//                getline(infile2, line2);
+//                word1 = line1.substr(0, line1.find(":"));
+//                word2 = line2.substr(0, line2.find(":"));
+//            }
+//            else if (word1.compare(word2) < 0) {
+//                // write line1 only
+//                outfile << line1 << endl;
+//
+//                // update Lexicon
+//                endp = outfile.tellp();
+//                Insert(word1, beginp, endp, calcDocNum(line1));
+//                beginp = endp;
+//
+//                // update line1
+//                getline(infile1, line1);
+//                word1 = line1.substr(0, line1.find(":"));
+//            }
+//            else {
+//                // write line2 only
+//                outfile << line2 << endl;
+//
+//                // update Lexicon
+//                endp = outfile.tellp();
+//                Insert(word2, beginp, endp, calcDocNum(line2));
+//                beginp = endp;
+//
+//                // update line2
+//                getline(infile2, line2);
+//                word2 = line2.substr(0, line2.find(":"));
+//            }
+//        }
+//
+//        if (infile1) {
+//            outfile << line1 << endl;
+//            // update Lexicon
+//            endp = outfile.tellp();
+//            Insert(word1, beginp, endp, calcDocNum(line1));
+//            beginp = endp;
+//        }
+//        if (infile2) {
+//            outfile << line2 << endl;
+//            // update Lexicon
+//            endp = outfile.tellp();
+//            Insert(word2, beginp, endp, calcDocNum(line2));
+//            beginp = endp;
+//        }
+//
+//        while (infile1) {
+//            getline(infile1, line1);
+//            outfile << line1 << endl;
+//
+//            // update Lexicon
+//            endp = outfile.tellp();
+//            Insert(word1, beginp, endp, calcDocNum(line1));
+//            beginp = endp;
+//        }
+//        while (infile2) {
+//            getline(infile2, line2);
+//            outfile << line2 << endl;
+//
+//            // update Lexicon
+//            endp = outfile.tellp();
+//            Insert(word2, beginp, endp, calcDocNum(line2));
+//            beginp = endp;
+//        }
+//    }
+//
+//
+//    infile1.close();
+//    infile2.close();
+//    outfile.close();
+//}
+// New Build function that processes a single merged file
+void Lexicon::Build(const string& mergedIndexPath) {
+    ifstream infile;
     ofstream outfile;
 
-    if (FILEMODE_BIN) {  // FILEMODE == BIN
-        infile1.open(path1, ifstream::binary);
-        infile2.open(path2, ifstream::binary);
+    // Ensure output directory exists before writing the output file
+    string outputDirectory = "../data/";  // Extract directory from IndexPath
+    struct stat info;
+
+    if (stat(outputDirectory.c_str(), &info) != 0 || !(info.st_mode & S_IFDIR)) {
+        cerr << "Error: Output directory does not exist or cannot be accessed: " << outputDirectory << endl;
+        return;
+    }
+
+    const size_t BUFFER_SIZE = 50 * 1024;  // Define a buffer size (e.g., 50KB)
+
+    if (FILEMODE_BIN) {
+        infile.open(mergedIndexPath, ifstream::binary);
         outfile.open(IndexPath, ofstream::binary);
-        uint32_t beginp, endp;
-
-        string line1, line2;
-        string word1, word2;
-
-        while (infile1 && infile2) {
-            if (word1.empty() && word2.empty()) {
-                beginp = outfile.tellp();
-                getline(infile1, line1);
-                getline(infile2, line2);
-                word1 = line1.substr(0, line1.find(":"));
-                word2 = line2.substr(0, line2.find(":"));
-            }
-            if (word1.compare(word2) == 0) {
-                // merge word1 and word2
-                string arr1 = line1.substr(line1.find(":") + 1);
-                string arr2 = line2.substr(line2.find(":") + 1);
-                string docID1 = arr1.substr(0, arr1.find(" "));
-                string docID2 = arr2.substr(0, arr2.find(" "));
-                if (arr1.empty() || arr2.empty()) {
-                    break;
-                }
-                uint32_t docNum1, docNum2;
-
-                if (docID1 < docID2) {
-                    docNum1 = WriteBitArray(arr1, outfile);
-                    docNum2 = WriteBitArray(arr2, outfile);
-                }
-                else {
-                    docNum2 = WriteBitArray(arr2, outfile);
-                    docNum1 = WriteBitArray(arr1, outfile);
-                }
-
-                // update Lexicon
-                endp = outfile.tellp();
-                Insert(word1, beginp, endp, docNum1 + docNum2);
-                beginp = endp;
-
-                // update line1 and line2
-                getline(infile1, line1);
-                getline(infile2, line2);
-                word1 = line1.substr(0, line1.find(":"));
-                word2 = line2.substr(0, line2.find(":"));
-            }
-            else if (word1.compare(word2) < 0) {
-                string arr1 = line1.substr(line1.find(":") + 1);
-                if (arr1.empty()) {
-                    break;
-                }
-
-                // write line1 only
-                uint32_t docNum = WriteBitArray(arr1, outfile);
-
-                // update Lexicon
-                endp = outfile.tellp();
-                Insert(word1, beginp, endp, docNum);
-                beginp = endp;
-
-                // update line1
-                getline(infile1, line1);
-                word1 = line1.substr(0, line1.find(":"));
-            }
-            else {
-                string arr2 = line2.substr(line2.find(":") + 1);
-                if (arr2.empty())
-                    break;
-
-                // write line2 only
-                uint32_t docNum = WriteBitArray(arr2, outfile);
-
-                // update Lexicon
-                endp = outfile.tellp();
-                Insert(word2, beginp, endp, docNum);
-                beginp = endp;
-
-                // update line2
-                getline(infile2, line2);
-                word2 = line2.substr(0, line2.find(":"));
-            }
-        }
-
-        if (infile1) {
-            string arr1 = line1.substr(line1.find(":") + 1);
-            if (!arr1.empty()) {
-                uint32_t docNum = WriteBitArray(arr1, outfile);
-
-                // update Lexicon
-
-                endp = outfile.tellp();
-                Insert(word1, beginp, endp, docNum);
-                beginp = endp;
-            }
-        }
-        if (infile2) {
-            string arr2 = line2.substr(line2.find(":") + 1);
-            if (!arr2.empty()) {
-                uint32_t docNum = WriteBitArray(arr2, outfile);
-
-                // update Lexicon
-                if (docNum != -1) {
-                    endp = outfile.tellp();
-                    Insert(word2, beginp, endp, docNum);
-                    beginp = endp;
-                }
-            }
-        }
-
-        while (infile1) {
-            string arr1 = line1.substr(line1.find(":") + 1);
-            if (arr1.empty()) {
-                break;
-            }
-            getline(infile1, line1);
-
-            uint32_t docNum = WriteBitArray(arr1, outfile);
-
-            // update Lexicon
-            if (docNum != -1) {
-                break;
-            }
-            endp = outfile.tellp();
-            Insert(word1, beginp, endp, docNum);
-            beginp = endp;
-        }
-        while (infile2) {
-            string arr2 = line2.substr(line2.find(":") + 1);
-            if (arr2.empty()) {
-                break;
-            }
-
-            getline(infile2, line2);
-
-            uint32_t docNum = WriteBitArray(arr2, outfile);
-
-            // update Lexicon
-            endp = outfile.tellp();
-            Insert(word2, beginp, endp, docNum);
-            beginp = endp;
-        }
-    }
-
-    else {  // FILEMODE == ASCII
-        infile1.open(path1);
-        infile2.open(path2);
+    } else {
+        infile.open(mergedIndexPath);
         outfile.open(IndexPath);
-        string line1, line2;
-        string word1, word2;
-        uint32_t beginp, endp;
-
-        while (infile1 && infile2) {
-            if (word1.empty() && word2.empty()) {
-                beginp = outfile.tellp();
-                getline(infile1, line1);
-                getline(infile2, line2);
-                word1 = line1.substr(0, line1.find(":"));
-                word2 = line2.substr(0, line2.find(":"));
-            }
-            if (word1.compare(word2) == 0) {
-                // merge word1 and word2
-                string arr1 = line1.substr(line1.find(":") + 1);
-                string arr2 = line2.substr(line2.find(":") + 1);
-                string docID1 = arr1.substr(0, arr1.find(" "));
-                string docID2 = arr2.substr(0, arr2.find(" "));
-                if (docID1 < docID2) {
-                    outfile << word1 << ":" << arr1 << "," << arr2 << endl;
-                }
-                else {
-                    outfile << word1 << ":" << arr2 << "," << arr1 << endl;
-                }
-
-                // update Lexicon
-                endp = outfile.tellp();
-                Insert(word1, beginp, endp, calcDocNum(arr1) + calcDocNum(arr2));
-                beginp = endp;
-
-                // update line1 and line2
-                getline(infile1, line1);
-                getline(infile2, line2);
-                word1 = line1.substr(0, line1.find(":"));
-                word2 = line2.substr(0, line2.find(":"));
-            }
-            else if (word1.compare(word2) < 0) {
-                // write line1 only
-                outfile << line1 << endl;
-
-                // update Lexicon
-                endp = outfile.tellp();
-                Insert(word1, beginp, endp, calcDocNum(line1));
-                beginp = endp;
-
-                // update line1
-                getline(infile1, line1);
-                word1 = line1.substr(0, line1.find(":"));
-            }
-            else {
-                // write line2 only
-                outfile << line2 << endl;
-
-                // update Lexicon
-                endp = outfile.tellp();
-                Insert(word2, beginp, endp, calcDocNum(line2));
-                beginp = endp;
-
-                // update line2
-                getline(infile2, line2);
-                word2 = line2.substr(0, line2.find(":"));
-            }
-        }
-
-        if (infile1) {
-            outfile << line1 << endl;
-            // update Lexicon
-            endp = outfile.tellp();
-            Insert(word1, beginp, endp, calcDocNum(line1));
-            beginp = endp;
-        }
-        if (infile2) {
-            outfile << line2 << endl;
-            // update Lexicon
-            endp = outfile.tellp();
-            Insert(word2, beginp, endp, calcDocNum(line2));
-            beginp = endp;
-        }
-
-        while (infile1) {
-            getline(infile1, line1);
-            outfile << line1 << endl;
-
-            // update Lexicon
-            endp = outfile.tellp();
-            Insert(word1, beginp, endp, calcDocNum(line1));
-            beginp = endp;
-        }
-        while (infile2) {
-            getline(infile2, line2);
-            outfile << line2 << endl;
-
-            // update Lexicon
-            endp = outfile.tellp();
-            Insert(word2, beginp, endp, calcDocNum(line2));
-            beginp = endp;
-        }
     }
 
+//    // Check if the files opened successfully
+//    if (!infile.is_open() || !outfile.is_open()) {
+//        cerr << "Error opening file(s)!" << endl;
+//        return;
+//    }
+    // Check if the input file opened successfully
+    if (!infile.is_open()) {
+        cerr << "Error opening input file: " << mergedIndexPath << endl;
+        cerr << "Errno: " << errno << ", Error: " << strerror(errno) << endl;
+        return;
+    }
 
-    infile1.close();
-    infile2.close();
+    // Check if the output file opened successfully
+    if (!outfile.is_open()) {
+        cerr << "Error opening output file: " << IndexPath << endl;
+        cerr << "Errno: " << errno << ", Error: " << strerror(errno) << endl;
+        return;
+    }
+
+    // Set buffer for efficient reading and writing
+    char* inBuffer = new char[BUFFER_SIZE];
+    infile.rdbuf()->pubsetbuf(inBuffer, BUFFER_SIZE);
+
+    char* outBuffer = new char[BUFFER_SIZE];
+    outfile.rdbuf()->pubsetbuf(outBuffer, BUFFER_SIZE);
+
+    string line;
+    uint32_t beginp = 0, endp = 0;
+
+    while (getline(infile, line)) {
+        string word = line.substr(0, line.find(":"));
+        string postingsStr = line.substr(line.find(":") + 1);
+
+        // Get the current position in the output file (begin position for this word)
+        beginp = outfile.tellp();
+
+        // Encode the postings and write them in the output file
+        uint32_t docNum = WriteBitArray(postingsStr, outfile);
+
+        // Get the current position after writing (end position for this word)
+        endp = outfile.tellp();
+
+        // Insert the word and its positions into the Lexicon
+        Insert(word, beginp, endp, docNum);
+    }
+
+    delete[] inBuffer;
+    delete[] outBuffer;
+
+    infile.close();
     outfile.close();
 }
+
 
 void Lexicon::Write() {
     ofstream outfile;

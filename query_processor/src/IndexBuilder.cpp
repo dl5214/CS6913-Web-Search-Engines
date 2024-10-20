@@ -302,7 +302,7 @@ void IndexBuilder::mergeIndex() {
     // Open output file for final merged index
     ofstream outfile;
 //    string dst_mergePath = _InvertedList.getIndexFilePath();  // Output final index file path
-    string dst_mergePath = FINAL_INDEX_PATH;
+    string dst_mergePath = MERGED_INDEX_PATH;
     if (FILEMODE_BIN) {
         outfile.open(dst_mergePath, ofstream::binary);
     } else {

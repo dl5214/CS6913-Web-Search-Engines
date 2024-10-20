@@ -30,7 +30,8 @@ public:
     Lexicon();
     ~Lexicon();
     bool Insert(string, uint32_t, uint32_t, uint32_t);
-    void Build(string, string);
+//    void Build(string, string);
+    void Build(const string& mergedIndexPath);
     void Write();
 };
 
