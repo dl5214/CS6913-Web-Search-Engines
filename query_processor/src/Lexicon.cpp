@@ -2,11 +2,11 @@
 // Created by Dong Li on 10/16/24.
 //
 #include "Lexicon.h"
-#include <sys/stat.h>
 using namespace std;
 
+
 // Function to encode a uint32 value using Varbyte encoding
-vector<uint8_t> varbyte_encode(uint32_t value) {
+vector<uint8_t> varbyteEncode(uint32_t value) {
     vector<uint8_t> encoded;
     while (value > 0) {
         // Extract the 7 least significant bits
@@ -23,8 +23,9 @@ vector<uint8_t> varbyte_encode(uint32_t value) {
     return encoded;
 }
 
+
 // Function to decode a Varbyte encoded sequence into a uint32 value
-uint32_t varbyte_decode(const vector<uint8_t> &encoded) {
+uint32_t varbyteDecode(const vector<uint8_t> &encoded) {
     uint32_t value = 0;
     for (size_t i = 0; i < encoded.size(); ++i) {
         // Extract the 7 least significant bits from the byte
@@ -39,27 +40,34 @@ uint32_t varbyte_decode(const vector<uint8_t> &encoded) {
     return value;
 }
 
-void LexiconItem::update(uint32_t bgp, uint32_t edp, uint32_t dn) {
-    beginp = bgp;
-    endp = edp;
-    docNum = dn;
+
+// Update the LexiconItem fields
+void LexiconItem::update(uint32_t beginPos, uint32_t endPos, uint32_t docNum, uint32_t blockNum) {
+    this->beginPos = beginPos;
+    this->endPos = endPos;
+    this->docNum = docNum;
+    this->blockNum = blockNum;
 }
 
+
+// Constructor for the Lexicon class, setting paths based on file mode (binary or ASCII)
 Lexicon::Lexicon() {
-    // Adjust the paths to include the "_BIN" or "_ASCII" suffix before the file name, not within the directory structure
-    if (FILEMODE_BIN) {  // FILEMODE == BIN
-        LexiconPath = string(LEXICON_PATH).substr(0, string(LEXICON_PATH).find_last_of('/')) + "/BIN_" + string(LEXICON_PATH).substr(string(LEXICON_PATH).find_last_of('/') + 1);
-        IndexPath = string(FINAL_INDEX_PATH).substr(0, string(FINAL_INDEX_PATH).find_last_of('/')) + "/BIN_" + string(FINAL_INDEX_PATH).substr(string(FINAL_INDEX_PATH).find_last_of('/') + 1);
+    if (FILE_MODE_BIN) {  // FILEMODE == BIN
+        _lexiconPath = string(LEXICON_PATH).substr(0, string(LEXICON_PATH).find_last_of('/')) + "/BIN_" + string(LEXICON_PATH).substr(string(LEXICON_PATH).find_last_of('/') + 1);
+        _indexPath = string(FINAL_INDEX_PATH).substr(0, string(FINAL_INDEX_PATH).find_last_of('/')) + "/BIN_" + string(FINAL_INDEX_PATH).substr(string(FINAL_INDEX_PATH).find_last_of('/') + 1);
     } else {  // FILEMODE == ASCII
-        LexiconPath = string(LEXICON_PATH).substr(0, string(LEXICON_PATH).find_last_of('/')) + "/ASCII_" + string(LEXICON_PATH).substr(string(LEXICON_PATH).find_last_of('/') + 1);
-        IndexPath = string(FINAL_INDEX_PATH).substr(0, string(FINAL_INDEX_PATH).find_last_of('/')) + "/ASCII_" + string(FINAL_INDEX_PATH).substr(string(FINAL_INDEX_PATH).find_last_of('/') + 1);
+        _lexiconPath = string(LEXICON_PATH).substr(0, string(LEXICON_PATH).find_last_of('/')) + "/ASCII_" + string(LEXICON_PATH).substr(string(LEXICON_PATH).find_last_of('/') + 1);
+        _indexPath = string(FINAL_INDEX_PATH).substr(0, string(FINAL_INDEX_PATH).find_last_of('/')) + "/ASCII_" + string(FINAL_INDEX_PATH).substr(string(FINAL_INDEX_PATH).find_last_of('/') + 1);
     }
 }
 
-Lexicon::~Lexicon() {
+
+Lexicon::~Lexicon() {  // Destructor - currently no dynamic memory to free
 }
 
-uint32_t Lexicon::calcDocNum(string idxWordList) {
+
+// Calculate the number of documents based on the index word list (docID and frequency pairs)
+uint32_t Lexicon::_calcDocNum(string idxWordList) {
     uint32_t spaceNum = 0;
     for (size_t i = 0; i < idxWordList.length(); i++) {
         if (idxWordList[i] == ' ') {
@@ -69,424 +77,222 @@ uint32_t Lexicon::calcDocNum(string idxWordList) {
     return (spaceNum + 1) / 2;  // Each word will have one space between docID and freq
 }
 
-bool Lexicon::Insert(string word, uint32_t beginp, uint32_t endp, uint32_t docNum) {
+
+// Insert a new entry into the lexicon map
+bool Lexicon::insert(string word, uint32_t beginp, uint32_t endp, uint32_t docNum, uint32_t blockNum) {
     if (word.empty()) {
-        return false;
+        return false;  // Avoid empty words
     }
     LexiconItem lexItem;
-    lexItem.update(beginp, endp, docNum);
-    _lexiconList[word] = lexItem;
+    lexItem.update(beginp, endp, docNum, blockNum);  // Update lexicon item details
+    lexiconList[word] = lexItem;  // Insert into the lexicon map
     return true;
 }
 
-uint32_t Lexicon::WriteBitArray(string arr, ofstream &outfile) {
+
+// Write encoded blocks of postings to the index file and return the number of blocks
+uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstream &outfile) {
+    // Initialize position and lists for storing encoded docIDs and frequencies
     size_t beginpos = 0;
+    vector<vector<uint8_t>> docID_list;  // Encoded docID list
+    vector<vector<uint8_t>> freq_list;  // Encoded frequency list
+    vector<uint32_t> metadata_last_docID;  // Last docID of each block
+    vector<uint32_t> metadata_docID_block_sizes;  // Sizes of docID blocks
+    vector<uint32_t> metadata_freq_block_sizes;  // Sizes of frequency blocks
+
     uint32_t freq, docID;
     bool isOk = true;
-    uint32_t docNum = 0;
-    // uint32_t prev_docID = 0;
+    uint32_t prevdocID = 0;
+
+    // Loop through the input postings string to extract and encode docIDs and frequencies
     while (isOk) {
         size_t space, comma;
         try {
+            // Extract docID and frequency from the postings list
             space = arr.find(" ", beginpos);
             comma = arr.find(",", space);
-            docID = stoi(arr.substr(beginpos, space - beginpos));
+            docID = stoi(arr.substr(beginpos, space - beginpos));  // Extract docID
 
             if (comma != string::npos) {
-                freq = stoi(arr.substr(space + 1, comma - space - 1));
+                freq = stoi(arr.substr(space + 1, comma - space - 1));  // Extract frequency
             }
             else {
-                freq = stoi(arr.substr(space + 1));
-                isOk = false;
+                freq = stoi(arr.substr(space + 1));  // Last frequency in the string
+                isOk = false;  // No more postings to process
+            }
+
+            // Encode docID as a difference (delta) from the previous docID using VarByte encoding
+            if (docID < prevdocID) {
+                cout << "nooo" << endl;
+            }
+
+            vector<uint8_t> endocID = varbyteEncode(docID - prevdocID);
+            vector<uint8_t> enFreq = varbyteEncode(freq);  // Encode frequency
+            docID_list.push_back(endocID);  // Store encoded docID
+            freq_list.push_back(enFreq);  // Store encoded frequency
+            prevdocID = docID;  // Update previous docID
+
+            // Store metadata for each block if it's full or we are at the end of the postings
+            if (docID_list.size() % POSTINGS_PER_BLOCK == 0 || !isOk) {
+                metadata_last_docID.push_back(docID);  // Store last docID of this block
+                prevdocID = 0;  // Reset for the next block
             }
         }
         catch (...) {
             cout << arr.substr(beginpos, space - beginpos) << " " << arr.substr(space + 1, comma - space - 1);
             cout << arr.substr(beginpos, space - beginpos).length() << endl;
             cout << arr.substr(space + 1, comma - space - 1).length() << endl;
-            cout << docNum << endl;
             continue;
         }
-
-        vector<uint8_t> endocID = varbyte_encode(docID);
-        vector<uint8_t> enFreq = varbyte_encode(freq);
-//        for (int i = 0; i < endocID.size(); i++) {
-//            outfile.write(reinterpret_cast<const char *>(&endocID[i]), sizeof(uint8_t));
-//        }
-//        for (int i = 0; i < enFreq.size(); i++) {
-//            outfile.write(reinterpret_cast<const char *>(&enFreq[i]), sizeof(uint8_t));
-//        }
-        for (const auto& byte : endocID) {
-            outfile.write(reinterpret_cast<const char*>(&byte), sizeof(uint8_t));
-        }
-
-        for (const auto& byte : enFreq) {
-            outfile.write(reinterpret_cast<const char*>(&byte), sizeof(uint8_t));
-        }
-
-        // prev_docID = docID;
-        beginpos = comma + 1;
-        docNum += 1;
-
+        beginpos = comma + 1;  // Move to the next docID in the postings list
     }
-    return docNum;
+
+    docNum = docID_list.size();  // Total number of postings (docID-frequency pairs)
+
+    // Calculate sizes for the metadata (docID block size and frequency block size)
+    uint32_t docIDsize = 0, freqSize = 0;
+    for (int i = 0; i < docID_list.size(); i++) {
+        docIDsize += docID_list[i].size();  // Sum size of encoded docIDs
+        freqSize += freq_list[i].size();  // Sum size of encoded frequencies
+
+        // If block is full, store the block sizes
+        if ((i + 1) % POSTINGS_PER_BLOCK == 0 || i == docID_list.size() - 1) {
+            metadata_docID_block_sizes.push_back(docIDsize);  // Store docID block size
+            metadata_freq_block_sizes.push_back(freqSize);  // Store frequency block size
+            docIDsize = 0;
+            freqSize = 0;  // Reset for the next block
+        }
+    }
+
+    // Write the blocks of postings and their metadata to the output file
+    int blocks_num = metadata_last_docID.size();  // Total number of blocks
+    int pblocks = 0;  // Pointer to track blocks written so far
+
+    uint32_t blockNum = 0;  // Total number of blocks
+
+    // Pack as many blocks as possible into the current buffer size (BLOCK_SIZE)
+    while (pblocks < blocks_num) {
+        uint32_t nowbyte = 4;  // Start with 4 bytes for block length
+        int pbeginblock = pblocks;
+
+        // Pack as many blocks as possible into the current buffer size (BLOCK_SIZE)
+        while (nowbyte <= BLOCK_SIZE && pblocks < blocks_num) {
+            uint32_t newsize = 4 * 3 + metadata_docID_block_sizes[pblocks] + metadata_freq_block_sizes[pblocks];
+            if (nowbyte + newsize > BLOCK_SIZE) {
+                break;  // Stop if the new block doesn't fit
+            }
+            pblocks += 1;
+            nowbyte += newsize;  // Update current byte count
+        }
+
+        // Write metadata for the current block (docIDs, block sizes)
+        blockNum += 1;
+        uint32_t block_len = pblocks - pbeginblock;
+        outfile.write(reinterpret_cast<const char *>(&block_len), sizeof(uint32_t));  // Write block length
+
+        // Write last docID, docID block sizes, and frequency block sizes for each block
+        for (int i = pbeginblock; i < pblocks; i++) {
+            outfile.write(reinterpret_cast<const char *>(&metadata_last_docID[i]), sizeof(uint32_t));
+            // if(term=="0") cout << metadata_last_docID[i] << " ";
+        }
+        // if(term=="0") cout << endl;
+        for (int i = pbeginblock; i < pblocks; i++) {
+            outfile.write(reinterpret_cast<const char *>(&metadata_docID_block_sizes[i]), sizeof(uint32_t));
+            // if(term=="0") cout<<metadata_docID_block_sizes[i]<<" ";
+        }
+        // if(term=="0") cout << endl;
+        for (int i = pbeginblock; i < pblocks; i++) {
+            outfile.write(reinterpret_cast<const char *>(&metadata_freq_block_sizes[i]), sizeof(uint32_t));
+            // if(term=="0") cout << metadata_freq_block_sizes[i] << " ";
+        }
+
+        // Write the actual postings (docID and frequency pairs)
+        for (int i = pbeginblock; i < pblocks; i++) {
+            // Write encoded docIDs for each block
+            for (int j = i * POSTINGS_PER_BLOCK; j < (i + 1) * POSTINGS_PER_BLOCK && j < docID_list.size(); j++) {
+                vector<uint8_t> endocID = docID_list[j];
+                for (int k = 0; k < endocID.size(); k++) {
+                    // Write each byte
+                    outfile.write(reinterpret_cast<const char *>(&endocID[k]), sizeof(uint8_t));
+                }
+            }
+            // Write encoded frequencies for each block
+            for (int j = i * POSTINGS_PER_BLOCK; j < (i + 1) * POSTINGS_PER_BLOCK && j < docID_list.size(); j++) {
+                vector<uint8_t> enFreq = freq_list[j];
+                for (int k = 0; k < enFreq.size(); k++) {
+                    // Write each byte
+                    outfile.write(reinterpret_cast<const char *>(&enFreq[k]), sizeof(uint8_t));
+                }
+            }
+        }
+        // file left blocks in 0
+        // uint8_t zero = 0;
+        // for (int i = 0; i < BLOCK_SIZE - nowbyte; i++)
+        // {
+        //     outfile.write(reinterpret_cast<const char *>(&zero), sizeof(uint8_t));
+        // }
+    }
+
+    return blockNum;  // Return the total number of blocks written
 }
 
-//void Lexicon::Build(string path1, string path2) {
-//    ifstream infile1;
-//    ifstream infile2;
-//    ofstream outfile;
-//
-//    if (FILEMODE_BIN) {  // FILEMODE == BIN
-//        infile1.open(path1, ifstream::binary);
-//        infile2.open(path2, ifstream::binary);
-//        outfile.open(IndexPath, ofstream::binary);
-//        uint32_t beginp, endp;
-//
-//        string line1, line2;
-//        string word1, word2;
-//
-//        while (infile1 && infile2) {
-//            if (word1.empty() && word2.empty()) {
-//                beginp = outfile.tellp();
-//                getline(infile1, line1);
-//                getline(infile2, line2);
-//                word1 = line1.substr(0, line1.find(":"));
-//                word2 = line2.substr(0, line2.find(":"));
-//            }
-//            if (word1.compare(word2) == 0) {
-//                // merge word1 and word2
-//                string arr1 = line1.substr(line1.find(":") + 1);
-//                string arr2 = line2.substr(line2.find(":") + 1);
-//                string docID1 = arr1.substr(0, arr1.find(" "));
-//                string docID2 = arr2.substr(0, arr2.find(" "));
-//                if (arr1.empty() || arr2.empty()) {
-//                    break;
-//                }
-//                uint32_t docNum1, docNum2;
-//
-//                if (docID1 < docID2) {
-//                    docNum1 = WriteBitArray(arr1, outfile);
-//                    docNum2 = WriteBitArray(arr2, outfile);
-//                }
-//                else {
-//                    docNum2 = WriteBitArray(arr2, outfile);
-//                    docNum1 = WriteBitArray(arr1, outfile);
-//                }
-//
-//                // update Lexicon
-//                endp = outfile.tellp();
-//                Insert(word1, beginp, endp, docNum1 + docNum2);
-//                beginp = endp;
-//
-//                // update line1 and line2
-//                getline(infile1, line1);
-//                getline(infile2, line2);
-//                word1 = line1.substr(0, line1.find(":"));
-//                word2 = line2.substr(0, line2.find(":"));
-//            }
-//            else if (word1.compare(word2) < 0) {
-//                string arr1 = line1.substr(line1.find(":") + 1);
-//                if (arr1.empty()) {
-//                    break;
-//                }
-//
-//                // write line1 only
-//                uint32_t docNum = WriteBitArray(arr1, outfile);
-//
-//                // update Lexicon
-//                endp = outfile.tellp();
-//                Insert(word1, beginp, endp, docNum);
-//                beginp = endp;
-//
-//                // update line1
-//                getline(infile1, line1);
-//                word1 = line1.substr(0, line1.find(":"));
-//            }
-//            else {
-//                string arr2 = line2.substr(line2.find(":") + 1);
-//                if (arr2.empty())
-//                    break;
-//
-//                // write line2 only
-//                uint32_t docNum = WriteBitArray(arr2, outfile);
-//
-//                // update Lexicon
-//                endp = outfile.tellp();
-//                Insert(word2, beginp, endp, docNum);
-//                beginp = endp;
-//
-//                // update line2
-//                getline(infile2, line2);
-//                word2 = line2.substr(0, line2.find(":"));
-//            }
-//        }
-//
-//        if (infile1) {
-//            string arr1 = line1.substr(line1.find(":") + 1);
-//            if (!arr1.empty()) {
-//                uint32_t docNum = WriteBitArray(arr1, outfile);
-//
-//                // update Lexicon
-//
-//                endp = outfile.tellp();
-//                Insert(word1, beginp, endp, docNum);
-//                beginp = endp;
-//            }
-//        }
-//        if (infile2) {
-//            string arr2 = line2.substr(line2.find(":") + 1);
-//            if (!arr2.empty()) {
-//                uint32_t docNum = WriteBitArray(arr2, outfile);
-//
-//                // update Lexicon
-//                if (docNum != -1) {
-//                    endp = outfile.tellp();
-//                    Insert(word2, beginp, endp, docNum);
-//                    beginp = endp;
-//                }
-//            }
-//        }
-//
-//        while (infile1) {
-//            string arr1 = line1.substr(line1.find(":") + 1);
-//            if (arr1.empty()) {
-//                break;
-//            }
-//            getline(infile1, line1);
-//
-//            uint32_t docNum = WriteBitArray(arr1, outfile);
-//
-//            // update Lexicon
-//            if (docNum != -1) {
-//                break;
-//            }
-//            endp = outfile.tellp();
-//            Insert(word1, beginp, endp, docNum);
-//            beginp = endp;
-//        }
-//        while (infile2) {
-//            string arr2 = line2.substr(line2.find(":") + 1);
-//            if (arr2.empty()) {
-//                break;
-//            }
-//
-//            getline(infile2, line2);
-//
-//            uint32_t docNum = WriteBitArray(arr2, outfile);
-//
-//            // update Lexicon
-//            endp = outfile.tellp();
-//            Insert(word2, beginp, endp, docNum);
-//            beginp = endp;
-//        }
-//    }
-//
-//    else {  // FILEMODE == ASCII
-//        infile1.open(path1);
-//        infile2.open(path2);
-//        outfile.open(IndexPath);
-//        string line1, line2;
-//        string word1, word2;
-//        uint32_t beginp, endp;
-//
-//        while (infile1 && infile2) {
-//            if (word1.empty() && word2.empty()) {
-//                beginp = outfile.tellp();
-//                getline(infile1, line1);
-//                getline(infile2, line2);
-//                word1 = line1.substr(0, line1.find(":"));
-//                word2 = line2.substr(0, line2.find(":"));
-//            }
-//            if (word1.compare(word2) == 0) {
-//                // merge word1 and word2
-//                string arr1 = line1.substr(line1.find(":") + 1);
-//                string arr2 = line2.substr(line2.find(":") + 1);
-//                string docID1 = arr1.substr(0, arr1.find(" "));
-//                string docID2 = arr2.substr(0, arr2.find(" "));
-//                if (docID1 < docID2) {
-//                    outfile << word1 << ":" << arr1 << "," << arr2 << endl;
-//                }
-//                else {
-//                    outfile << word1 << ":" << arr2 << "," << arr1 << endl;
-//                }
-//
-//                // update Lexicon
-//                endp = outfile.tellp();
-//                Insert(word1, beginp, endp, calcDocNum(arr1) + calcDocNum(arr2));
-//                beginp = endp;
-//
-//                // update line1 and line2
-//                getline(infile1, line1);
-//                getline(infile2, line2);
-//                word1 = line1.substr(0, line1.find(":"));
-//                word2 = line2.substr(0, line2.find(":"));
-//            }
-//            else if (word1.compare(word2) < 0) {
-//                // write line1 only
-//                outfile << line1 << endl;
-//
-//                // update Lexicon
-//                endp = outfile.tellp();
-//                Insert(word1, beginp, endp, calcDocNum(line1));
-//                beginp = endp;
-//
-//                // update line1
-//                getline(infile1, line1);
-//                word1 = line1.substr(0, line1.find(":"));
-//            }
-//            else {
-//                // write line2 only
-//                outfile << line2 << endl;
-//
-//                // update Lexicon
-//                endp = outfile.tellp();
-//                Insert(word2, beginp, endp, calcDocNum(line2));
-//                beginp = endp;
-//
-//                // update line2
-//                getline(infile2, line2);
-//                word2 = line2.substr(0, line2.find(":"));
-//            }
-//        }
-//
-//        if (infile1) {
-//            outfile << line1 << endl;
-//            // update Lexicon
-//            endp = outfile.tellp();
-//            Insert(word1, beginp, endp, calcDocNum(line1));
-//            beginp = endp;
-//        }
-//        if (infile2) {
-//            outfile << line2 << endl;
-//            // update Lexicon
-//            endp = outfile.tellp();
-//            Insert(word2, beginp, endp, calcDocNum(line2));
-//            beginp = endp;
-//        }
-//
-//        while (infile1) {
-//            getline(infile1, line1);
-//            outfile << line1 << endl;
-//
-//            // update Lexicon
-//            endp = outfile.tellp();
-//            Insert(word1, beginp, endp, calcDocNum(line1));
-//            beginp = endp;
-//        }
-//        while (infile2) {
-//            getline(infile2, line2);
-//            outfile << line2 << endl;
-//
-//            // update Lexicon
-//            endp = outfile.tellp();
-//            Insert(word2, beginp, endp, calcDocNum(line2));
-//            beginp = endp;
-//        }
-//    }
-//
-//
-//    infile1.close();
-//    infile2.close();
-//    outfile.close();
-//}
-// New Build function that processes a single merged file
-void Lexicon::Build(const string& mergedIndexPath) {
+
+// Build function that processes a single merged file
+void Lexicon::build(const string& mergedIndexPath) {
     ifstream infile;
     ofstream outfile;
-
-    // Ensure output directory exists before writing the output file
-    string outputDirectory = "../data/";  // Extract directory from IndexPath
-    struct stat info;
-
-    if (stat(outputDirectory.c_str(), &info) != 0 || !(info.st_mode & S_IFDIR)) {
-        cerr << "Error: Output directory does not exist or cannot be accessed: " << outputDirectory << endl;
-        return;
-    }
-
-    const size_t BUFFER_SIZE = 50 * 1024;  // Define a buffer size (e.g., 50KB)
-
-    if (FILEMODE_BIN) {
-        infile.open(mergedIndexPath, ifstream::binary);
-        outfile.open(IndexPath, ofstream::binary);
-    } else {
-        infile.open(mergedIndexPath);
-        outfile.open(IndexPath);
-    }
-
-//    // Check if the files opened successfully
-//    if (!infile.is_open() || !outfile.is_open()) {
-//        cerr << "Error opening file(s)!" << endl;
-//        return;
-//    }
-    // Check if the input file opened successfully
-    if (!infile.is_open()) {
-        cerr << "Error opening input file: " << mergedIndexPath << endl;
-        cerr << "Errno: " << errno << ", Error: " << strerror(errno) << endl;
-        return;
-    }
-
-    // Check if the output file opened successfully
-    if (!outfile.is_open()) {
-        cerr << "Error opening output file: " << IndexPath << endl;
-        cerr << "Errno: " << errno << ", Error: " << strerror(errno) << endl;
-        return;
-    }
-
-    // Set buffer for efficient reading and writing
-    char* inBuffer = new char[BUFFER_SIZE];
-    infile.rdbuf()->pubsetbuf(inBuffer, BUFFER_SIZE);
-
-    char* outBuffer = new char[BUFFER_SIZE];
-    outfile.rdbuf()->pubsetbuf(outBuffer, BUFFER_SIZE);
-
+    // Open the merged index file for reading and the final index file for writing
+    infile.open(mergedIndexPath, ifstream::binary);
+    outfile.open(indexPath, ofstream::binary);
+    uint32_t beginPos = 0;  // Variables to track the positions of the postings in the index file
+    uint32_t endPos;  // Variables to track the positions of the postings in the index file
     string line;
-    uint32_t beginp = 0, endp = 0;
 
-    while (getline(infile, line)) {
-        string word = line.substr(0, line.find(":"));
-        string postingsStr = line.substr(line.find(":") + 1);
+    // Read the merged index file line by line
+    while (!infile.eof()) {
+        getline(infile, line);  // Read each line (term and postings)
+        string word = line.substr(0, line.find(":"));   // Extract the term (before the colon)
+        if (!word.length()) {
+            break;  // If no word is found, exit the loop
+        }
+        string arr = line.substr(line.find(":") + 1);   // Extract the postings list (after the colon)
 
-        // Get the current position in the output file (begin position for this word)
-        beginp = outfile.tellp();
+        uint32_t docNum;
+        // Write the blocks of postings for this word and get the number of blocks
+        uint32_t blockNum = _writeBlocks(word, docNum, arr, outfile);
 
-        // Encode the postings and write them in the output file
-        uint32_t docNum = WriteBitArray(postingsStr, outfile);
-
-        // Get the current position after writing (end position for this word)
-        endp = outfile.tellp();
-
-        // Insert the word and its positions into the Lexicon
-        Insert(word, beginp, endp, docNum);
+        // Update the lexicon with the term's metadata (begin/end positions, docNum, blockNum)
+        endPos = outfile.tellp();   // Get the current position (end of the postings for this word)
+        if (blockNum > 1) {
+            cout << word << " " << beginPos << " " << endPos << " "
+                      << docNum << " " << blockNum << endl;
+        }
+        insert(word, beginPos, endPos, docNum, blockNum);   // Insert the term and its metadata into the lexicon
+        beginPos = endPos;  // Update the starting position for the next term
     }
 
-    delete[] inBuffer;
-    delete[] outBuffer;
-
-    infile.close();
+    // Close the input and output files    infile.close();
     outfile.close();
 }
 
 
-void Lexicon::Write() {
+// Function to write the lexicon to disk
+void Lexicon::write() {
     ofstream outfile;
 
-    if (FILEMODE_BIN) {  // FILEMODE == BIN
-        outfile.open(LexiconPath, ofstream::binary);
+    // Open the lexicon file for writing based on the file mode (binary or ASCII)
+    if (FILE_MODE_BIN) {  // FILEMODE == BIN
+        outfile.open(_lexiconPath, ofstream::binary);
     }
     else {  // FILEMODE == ASCII
-        outfile.open(LexiconPath);
+        outfile.open(_lexiconPath);
     }
 
-//    for (map<string, LexiconItem>::iterator iter = _lexiconList.begin(); iter != _lexiconList.end(); ++iter) {
-//        outfile << iter->first << " " << iter->second.beginp << " " << iter->second.endp << " "
-//                << iter->second.docNum << endl;
-//    }
-
-    for (const auto& [word, lexItem] : _lexiconList) {
-        outfile << word << " " << lexItem.beginp << " " << lexItem.endp << " "
+    // Write each term and its metadata (begin/end positions, docNum) from the lexicon map
+    for (const auto& [word, lexItem] : lexiconList) {
+        outfile << word << " " << lexItem.beginPos << " " << lexItem.endPos << " "
                 << lexItem.docNum << endl;
     }
 
-    outfile.close();
+    outfile.close();    // Close the lexicon file
 }

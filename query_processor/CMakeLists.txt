@@ -16,7 +16,7 @@ add_executable(Main
         src/InvertedList.cpp
         src/Lexicon.cpp
         src/IndexBuilder.cpp
-        )
+        src/QueryProcessor.h src/SearchResult.h src/SearchResult.cpp src/QueryProcessor.cpp)
 
 # Include directories (if needed)
 include_directories(${PROJECT_SOURCE_DIR}/include)

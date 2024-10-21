@@ -4,30 +4,44 @@
 #include "PageTable.h"
 using namespace std;
 
-void Document::print() const {
-    cout << "docID:" << docID << " dataLen:" << dataLen
-//    << " docNO:" << docNO << " url:" << url
-    << " wordnums:" << wordnums << endl;
+
+void PageTable::_getAvgDataLen() {
+    double allLen = 0;
+    for (const auto& doc : pageTable) {
+        allLen += doc.dataLength;
+    }
+    avgDataLen = allLen/pageTable.size();
 }
 
-PageTable::PageTable(/* args */) {
-    _totalDoc = 0;
-    _PageTable.empty();
+
+void Document::print() const {
+    cout << "docId:" << docId << " dataLength:" << dataLength
+//    << " docNO:" << docNO << " url:" << url
+    << " wordCount:" << wordCount << endl;
 }
+
+
+PageTable::PageTable(/* args */) {
+    totalDoc = 0;
+    pageTable.empty();
+}
+
 
 PageTable::~PageTable() {
 }
 
-void PageTable::add(Document docIDitem) {
-    _PageTable.push_back(docIDitem);
+
+void PageTable::add(Document docIdItem) {
+    pageTable.push_back(docIdItem);
 }
 
-void PageTable::Write() {
+
+void PageTable::write() {
     ofstream outfile;
     string path;
 
     // Adjust the path to include the "_BIN" or "_ASCII" suffix before the file name, not within the directory structure
-    if (FILEMODE_BIN) {  // FILEMODE == BIN
+    if (FILE_MODE_BIN) {  // FILEMODE == BIN
         path = string(PAGE_TABLE_PATH).substr(0, string(PAGE_TABLE_PATH).find_last_of('/')) + "/BIN_" + string(PAGE_TABLE_PATH).substr(string(PAGE_TABLE_PATH).find_last_of('/') + 1);
         outfile.open(path, ofstream::binary);
     }
@@ -43,13 +57,8 @@ void PageTable::Write() {
         return;
     }
 
-//    for (vector<Document>::iterator iter = _PageTable.begin();
-//         iter != _PageTable.end(); ++iter) {
-//        outfile << iter->docID << " " << iter->docNO << " " << iter->dataLen << " "
-//                << iter->wordnums << " " << iter->url << " " << endl;
-//    }
-    for (const auto& doc : _PageTable) {
-        outfile << doc.docID << " " << doc.dataLen << " " << doc.wordnums << " "
+    for (const auto& doc : pageTable) {
+        outfile << doc.docId << " " << doc.dataLength << " " << doc.wordCount << " "
 //               << " " << doc.docNO << doc.url << " "
                 << endl;
     }
@@ -57,11 +66,9 @@ void PageTable::Write() {
     outfile.close();
 }
 
+
 void PageTable::print() {
-//    for (vector<Document>::iterator it = _PageTable.begin(); it != _PageTable.end(); ++it) {
-//        it->print();
-//    }
-    for (const auto& doc : _PageTable) {
+    for (const auto& doc : pageTable) {
         doc.print();
     }
 }

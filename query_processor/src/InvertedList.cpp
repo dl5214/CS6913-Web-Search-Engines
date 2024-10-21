@@ -5,13 +5,14 @@
 #include "InvertedList.h"
 using namespace std;
 
+
 InvertedList::InvertedList() {
-    HashWord.clear();
+    hashWord.clear();
     allIndexSize = 0;
-    indexFileNum = 0;
+    indexFileCount = 0;
 
     if (!INDEX_FLAG) {
-        countIndexFileNum();
+        _countIndexFiles();
         return;
     }
 
@@ -20,29 +21,32 @@ InvertedList::InvertedList() {
     string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
 
     if (filesystem::exists(IndexFoldPath)) {
-        if (!clearIndexFolder(false)) {
+        if (!_clearIndexFolder(false)) {
             throw "cannot clear Index Folder!";
         }
     }
     else {
-        if (!creatIndexFolder()) {
+        if (!_creatIndexFolder()) {
             throw "cannot create Index Folder!";
         }
     }
 }
 
+
 InvertedList::~InvertedList() {
     if (DELETE_INTERMEDIATE) {
-        clearIndexFolder(true);
+        _clearIndexFolder(true);
     }
 }
 
-bool InvertedList::creatIndexFolder() {
+
+bool InvertedList::_creatIndexFolder() {
     string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
     return filesystem::create_directory(IndexFoldPath);
 }
 
-bool InvertedList::clearIndexFolder(bool deleteFolder) {
+
+bool InvertedList::_clearIndexFolder(bool deleteFolder) {
     string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
     for (const auto &entry : filesystem::directory_iterator(IndexFoldPath)) {
         if (!filesystem::is_directory(entry.path())) {
@@ -57,25 +61,27 @@ bool InvertedList::clearIndexFolder(bool deleteFolder) {
     return true;
 }
 
-void InvertedList::countIndexFileNum() {
-    indexFileNum = 0;
+
+void InvertedList::_countIndexFiles() {
+    indexFileCount = 0;
     string IndexFoldPath = INTERMEDIATE_INDEX_PATH;
     for (const auto &entry : filesystem::directory_iterator(IndexFoldPath)) {
         if (!filesystem::is_directory(entry.path())) {
-            indexFileNum += 1;
+            indexFileCount += 1;
         }
     }
 }
 
+
 // inset (docID,freq) in wordHash[word]
-void InvertedList::Insert(string word, uint32_t docID, uint32_t freq) {
+void InvertedList::insertWord(string word, uint32_t docID, uint32_t freq) {
     // judge if have enough space to put
     bool indexChunkFull = false;
-    if (HashWord.count(word)) {
+    if (hashWord.count(word)) {
         if (allIndexSize + POST_BYTES > INDEX_CHUNK_SIZE)
             indexChunkFull = true;
         else {
-            HashWord[word].push_back(pair<uint32_t, uint32_t>(docID, freq));
+            hashWord[word].push_back(pair<uint32_t, uint32_t>(docID, freq));
             allIndexSize += POST_BYTES;
         }
     }
@@ -85,36 +91,39 @@ void InvertedList::Insert(string word, uint32_t docID, uint32_t freq) {
         }
         else {
             vector<pair<uint32_t, uint32_t>> newVec;
-            newVec.push_back(pair<uint32_t, uint32_t>(docID, freq));
-            HashWord[word] = newVec;
+//            newVec.push_back(pair<uint32_t, uint32_t>(docID, freq));
+            newVec.emplace_back(docID, freq);
+            hashWord[word] = newVec;
             allIndexSize += POST_BYTES + AVG_WORD_BYTES;
         }
     }
 
     // INDEX CHUNK is full, need write out.
     if (indexChunkFull) {
-        Write();
-        Clear();
+        writeToFile();
+        clear();
         vector<pair<uint32_t, uint32_t>> newVec;
-        newVec.push_back(pair<uint32_t, uint32_t>(docID, freq));
-        HashWord[word] = newVec;
+//        newVec.push_back(pair<uint32_t, uint32_t>(docID, freq));
+        newVec.emplace_back(docID, freq);
+        hashWord[word] = newVec;
         allIndexSize += POST_BYTES + AVG_WORD_BYTES;
     }
 }
 
-string InvertedList::getIndexFilePath() {
-    indexFileNum += 1;
 
-    if (FILEMODE_BIN){  // FILEMODE == BIN
-        return string(INTERMEDIATE_INDEX_PATH) + "BIN_" + to_string(indexFileNum - 1) + ".bin";
+string InvertedList::getIndexFilePath() {
+    indexFileCount += 1;
+
+    if (FILE_MODE_BIN){  // FILEMODE == BIN
+        return string(INTERMEDIATE_INDEX_PATH) + "BIN_" + to_string(indexFileCount - 1) + ".bin";
     }
     else {  // FILEMODE == ASCII
-        return string(INTERMEDIATE_INDEX_PATH) + "ASCII_" + to_string(indexFileNum - 1) + ".txt";
+        return string(INTERMEDIATE_INDEX_PATH) + "ASCII_" + to_string(indexFileCount - 1) + ".txt";
     }
 }
 
 string InvertedList::getIndexFilePath(uint32_t fileNum) {
-    if (FILEMODE_BIN){  // FILEMODE == FILEMODE_BIN
+    if (FILE_MODE_BIN){  // FILEMODE == FILEMODE_BIN
         return string(INTERMEDIATE_INDEX_PATH) + "BIN_" + to_string(fileNum) + ".bin";
     }
     else {  // FILEMODE == ASCII
@@ -122,6 +131,7 @@ string InvertedList::getIndexFilePath(uint32_t fileNum) {
     }
 
 }
+
 
 //// Function to get the path for the final index file
 //string InvertedList::getFinalIndexFilePath() {
@@ -134,27 +144,18 @@ string InvertedList::getIndexFilePath(uint32_t fileNum) {
 //    }
 //}
 
-void InvertedList::Write()
-{
+
+void InvertedList::writeToFile() {
     string path = getIndexFilePath();
     ofstream outfile;
-    if (FILEMODE_BIN) {  // FILEMODE == BIN
+    if (FILE_MODE_BIN) {  // FILEMODE == BIN
         outfile.open(path, ofstream::binary);
     }
     else {  // FILEMODE == ASCII
         outfile.open(path);
     }
-//    for (map<string, vector<pair<uint32_t, uint32_t>>>::iterator it = HashWord.begin(); it != HashWord.end(); ++it) {
-//        outfile << it->first << ":";
-//        for (vector<pair<uint32_t, uint32_t>>::iterator iter = it->second.begin(); iter != it->second.end(); ++iter) {
-//            if (iter != it->second.begin()) {
-//                outfile << ",";
-//            }
-//            outfile << iter->first << " " << iter->second;
-//        }
-//        outfile << endl;
-//    }
-    for (const auto& [word, postings] : HashWord) {
+
+    for (const auto& [word, postings] : hashWord) {
         outfile << word << ":";
 
         for (size_t i = 0; i < postings.size(); ++i) {
@@ -168,8 +169,8 @@ void InvertedList::Write()
     outfile.close();
 }
 
-void InvertedList::Clear()
+void InvertedList::clear()
 {
     allIndexSize = 0;
-    HashWord.clear();
+    hashWord.clear();
 }

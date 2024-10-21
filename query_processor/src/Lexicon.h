@@ -6,33 +6,35 @@
 #define SEARCHSYSTEM_LEXICON_H
 
 #include "config.h"
-
 using namespace std;
+
 
 class LexiconItem {
 public:
-    uint32_t beginp; // begin offset
-    uint32_t endp;   // end offset
+    uint32_t beginPos; // begin offset
+    uint32_t endPos;   // end offset
+    uint32_t blockNum;
     uint32_t docNum;
-    void update(uint32_t, uint32_t, uint32_t);
+    void update(uint32_t, uint32_t, uint32_t, uint32_t);
 };
 
 class Lexicon {
 private:
-    string IndexPath;
-    string LexiconPath;
-    uint32_t calcDocNum(string); //calc Doc Num
-    uint32_t WriteBitArray(string, ofstream &);
+    string _indexPath;
+    string _lexiconPath;
+    uint32_t _calcDocNum(string); //calc Doc Num
+    uint32_t _writeBlocks(string, uint32_t&, string, ofstream &);
 
 public:
-    map<string, LexiconItem> _lexiconList;
-
+    map<string, LexiconItem> lexiconList;
+    string indexPath;
     Lexicon();
     ~Lexicon();
-    bool Insert(string, uint32_t, uint32_t, uint32_t);
+    bool insert(string, uint32_t, uint32_t, uint32_t, uint32_t);
 //    void Build(string, string);
-    void Build(const string& mergedIndexPath);
-    void Write();
+    void build(const string& mergedIndexPath);
+    void write();
+    void Load();
 };
 
 #endif //SEARCHSYSTEM_LEXICON_H

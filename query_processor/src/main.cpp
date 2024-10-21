@@ -21,7 +21,7 @@ int main() {
     if (INDEX_FLAG) {
         cout << "Building postings and intermediate inverted index. Timing started... " << endl;
         clock_t index_start = clock();
-        index_builder.read_data(DATA_SOURCE_PATH);
+        index_builder.readData(DATA_SOURCE_PATH);
         clock_t index_end = clock();
         double index_time = double(index_end - index_start) / 1000000;
         cout << "Building postings and intermediate inverted index DONE." << endl;
@@ -46,8 +46,8 @@ int main() {
 //        string mergedIndexPath = MERGED_INDEX_PATH;
 //        realpath(mergedIndexPath.c_str(), realPath);
 //        cout << "Absolute path of mergedIndexPath: " << realPath << endl;
-        index_builder._Lexicon.Build(MERGED_INDEX_PATH);  // Pass the final merged index file
-        index_builder.WriteLexicon();
+        index_builder.lexicon.build(MERGED_INDEX_PATH);  // Pass the final merged index file
+        index_builder.writeLexicon();
         clock_t lexicon_build_end = clock();
         double lexicon_build_time = double(lexicon_build_end - lexicon_build_start) / 1000000;
         cout << "Building Lexicon and Final Index DONE." << endl;

@@ -23,7 +23,7 @@ void SortedPosting::print() {
 //        cout << "(" << it->first << "," << it->second << ")\n";
 //    }
     // Using C++11 structured bindings and range-based loop to print more cleanly
-    for (const auto& [word, count] : _sortedList) {
+    for (const auto& [word, count] : sortedList) {
         cout << "(" << word << "," << count << ")\n";
     }
 }
@@ -37,7 +37,7 @@ IndexBuilder::~IndexBuilder() {
 }
 
 // Extracts a substring from 'org' between 'bstr' and 'estr'
-string IndexBuilder::extractContent(string org, string bstr, string estr) {
+string IndexBuilder::_extractContent(string org, string bstr, string estr) {
     size_t begin_tag_len = bstr.length();
 
     // Find the positions of the start and end tags
@@ -49,13 +49,13 @@ string IndexBuilder::extractContent(string org, string bstr, string estr) {
 }
 
 // Gets the first line from the string 'str' (up to the newline character)
-string IndexBuilder::getFirstLine(string str) {
+string IndexBuilder::_getFirstLine(string str) {
     size_t endpos = str.find("\n");
     return str.substr(0, endpos);
 }
 
 // Calculates the frequency of each word in the 'text' and stores it in the inverted list for the given 'docID'
-uint32_t IndexBuilder::calcWordFreq(string text, uint32_t docID) {
+uint32_t IndexBuilder::_calcWordFreq(string text, uint32_t docID) {
     // Define separator characters used to split words
     string sep = " :;,.\t\v\r\n\f[]{}()<>+-=*&^%$#@!~`´\'\"|\\/?·\"：“”"
                  "∂æâãäåàªÃÅÂÄÃÊËÉïîìÏÌóûüÙÛÚñÑÐ¸¶Øø§≠°º®©¤¯½¼¾«»±£¢¹²³¬¦¨¿_";
@@ -75,13 +75,13 @@ uint32_t IndexBuilder::calcWordFreq(string text, uint32_t docID) {
                 // Keep only words that start with an English letter or a digit
                 if (isalnum(word[0])) {
                     // Check if the word is already in the sorted list
-                    if (!sortedPosting._sortedList.count(word)) {
+                    if (!sortedPosting.sortedList.count(word)) {
                         // If not, add the word with a count of 1
-                        sortedPosting._sortedList[word] = 1;
+                        sortedPosting.sortedList[word] = 1;
                     }
                     else {
                         // If it exists, increment the word count
-                        sortedPosting._sortedList[word] += 1;
+                        sortedPosting.sortedList[word] += 1;
                     }
                 }
             }
@@ -92,10 +92,10 @@ uint32_t IndexBuilder::calcWordFreq(string text, uint32_t docID) {
 
     // Ensure the last word is also processed (in case the text doesn't end with a separator)
     if (!word.empty() && isalnum(word[0])) {
-        if (!sortedPosting._sortedList.count(word)) {
-            sortedPosting._sortedList[word] = 1;
+        if (!sortedPosting.sortedList.count(word)) {
+            sortedPosting.sortedList[word] = 1;
         } else {
-            sortedPosting._sortedList[word] += 1;
+            sortedPosting.sortedList[word] += 1;
         }
     }
 
@@ -104,15 +104,15 @@ uint32_t IndexBuilder::calcWordFreq(string text, uint32_t docID) {
     }
 
     // Insert the word frequencies into the inverted list
-    for (const auto& [word, count] : sortedPosting._sortedList) {
-        _InvertedList.Insert(word, docID, count);
+    for (const auto& [word, count] : sortedPosting.sortedList) {
+        invertedList.insertWord(word, docID, count);
     }
 
     // Return the number of unique words in the document
-    return sortedPosting._sortedList.size();
+    return sortedPosting.sortedList.size();
 }
 
-void IndexBuilder::read_data(const char *filepath) {
+void IndexBuilder::readData(const char *filepath) {
     ifstream infile(filepath);  // Open the uncompressed TSV file
     if (!infile.is_open()) {
         cerr << "Error opening file: " << filepath << endl;
@@ -150,17 +150,17 @@ void IndexBuilder::read_data(const char *filepath) {
             if (!docID_str.empty() && all_of(docID_str.begin(), docID_str.end(), ::isdigit)) {
                 try {
                     Document doc;
-                    doc.docID = stoi(docID_str);  // Parse the docID as an integer
+                    doc.docId = stoi(docID_str);  // Parse the docID as an integer
                     string fullText = docContent.substr(tab_pos + 1);  // Extract the content after the tab
 
                     // Continue processing if docID is valid
-                    if (doc.docID >= 0) {
-                        doc.dataLen = fullText.length();  // Calculate the length of the document
-                        doc.wordnums = calcWordFreq(fullText, doc.docID);  // Calculate word frequency
-                        _PageTable.add(doc);  // Add the document to the page table
+                    if (doc.docId >= 0) {
+                        doc.dataLength = fullText.length();  // Calculate the length of the document
+                        doc.wordCount = _calcWordFreq(fullText, doc.docId);  // Calculate word frequency
+                        pageTable.add(doc);  // Add the document to the page table
 
-                        if (DEBUG_MODE && doc.docID % 10000 == 0) {
-                            cout << "Processing DocID: " << doc.docID << endl;
+                        if (DEBUG_MODE && doc.docId % 10000 == 0) {
+                            cout << "Processing DocID: " << doc.docId << endl;
                         }
                     }
                 }
@@ -177,23 +177,23 @@ void IndexBuilder::read_data(const char *filepath) {
     }
 
     // Write the inverted list to disk if it contains any entries
-    if (!_InvertedList.HashWord.empty()) {
-        _InvertedList.Write();
-        _InvertedList.Clear();
+    if (!invertedList.hashWord.empty()) {
+        invertedList.writeToFile();
+        invertedList.clear();
     }
 
     // Optionally print the page table if debugging
     if (DEBUG_MODE & 0) {
-        _PageTable.print();  // Print the page table
+        pageTable.print();  // Print the page table
     }
 
     // Write the page table to the disk if necessary
     if (PAGE_TABLE_FLAG & INDEX_FLAG) {
         clock_t write_page_begin = clock();
-        WritePageTable();
+        writePageTable();
         clock_t write_page_end = clock();
         clock_t write_page_time = write_page_end - write_page_begin;
-        cout << "Writing Page Table Takes " << double(write_page_time) / 1000000 << "Seconds" << endl;
+        cout << "Writing Page Table Takes " << double(write_page_time) / 1000000 << " Seconds" << endl;
     }
 
     // Clean up
@@ -203,7 +203,7 @@ void IndexBuilder::read_data(const char *filepath) {
 
 // N-way merge logic with support for binary and ASCII modes
 // Helper function to parse postings from a string
-vector<pair<uint32_t, uint32_t>> IndexBuilder::parsePostings(const string& postingsStr) {
+vector<pair<uint32_t, uint32_t>> IndexBuilder::_parsePostings(const string& postingsStr) {
     vector<pair<uint32_t, uint32_t>> postings;
     istringstream iss(postingsStr);
     uint32_t docID, freq;
@@ -216,7 +216,7 @@ vector<pair<uint32_t, uint32_t>> IndexBuilder::parsePostings(const string& posti
 }
 
 // Helper function to write merged postings to output, ensuring correct handling for single postings
-void IndexBuilder::writeMergedPostings(ofstream& outfile, const string& word, const vector<pair<uint32_t, uint32_t>>& postings) {
+void IndexBuilder::_writeMergedPostings(ofstream& outfile, const string& word, const vector<pair<uint32_t, uint32_t>>& postings) {
     if (!postings.empty()) {  // Ensure that we only write non-empty posting lists
         outfile << word << ":";
         for (size_t i = 0; i < postings.size(); ++i) {
@@ -230,7 +230,7 @@ void IndexBuilder::writeMergedPostings(ofstream& outfile, const string& word, co
 }
 
 // Merges postings with the same docID, ensuring no postings are lost
-void IndexBuilder::mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, const vector<pair<uint32_t, uint32_t>>& newPostings, bool ordered) {
+void IndexBuilder::_mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, const vector<pair<uint32_t, uint32_t>>& newPostings, bool ordered) {
     if (ordered && !base.empty() && !newPostings.empty() && base.back().first < newPostings.front().first) {
         // Append the newPostings directly if they are all larger than the ones in base
         base.insert(base.end(), newPostings.begin(), newPostings.end());
@@ -270,7 +270,7 @@ void IndexBuilder::mergePostingLists(vector<pair<uint32_t, uint32_t>>& base, con
 
 // Multi-way merge function with improved comparison and handling of missing postings
 void IndexBuilder::mergeIndex() {
-    uint32_t leftIndexNum = _InvertedList.indexFileNum;  // Number of intermediate index files
+    uint32_t leftIndexNum = invertedList.indexFileCount;  // Number of intermediate index files
     cout << "Number of intermediate index files: " << leftIndexNum << endl;
 
     // Priority queue for multi-way merge
@@ -282,8 +282,8 @@ void IndexBuilder::mergeIndex() {
 
     // Open all intermediate files and add the first word from each file into the priority queue
     for (uint32_t i = 0; i < leftIndexNum; ++i) {
-        string path = _InvertedList.getIndexFilePath(i);
-        inputStreams[i].open(path, FILEMODE_BIN ? ifstream::binary : ifstream::in);
+        string path = invertedList.getIndexFilePath(i);
+        inputStreams[i].open(path, FILE_MODE_BIN ? ifstream::binary : ifstream::in);
         if (!inputStreams[i].is_open()) {
             cerr << "Error opening file: " << path << endl;
             return;
@@ -294,7 +294,7 @@ void IndexBuilder::mergeIndex() {
             size_t colonPos = line.find(":");
             string word = line.substr(0, colonPos);
             string postingsStr = line.substr(colonPos + 1);
-            vector<pair<uint32_t, uint32_t>> postings = parsePostings(postingsStr);
+            vector<pair<uint32_t, uint32_t>> postings = _parsePostings(postingsStr);
             pq.emplace(word, &inputStreams[i], postings);
         }
     }
@@ -303,7 +303,7 @@ void IndexBuilder::mergeIndex() {
     ofstream outfile;
 //    string dst_mergePath = _InvertedList.getIndexFilePath();  // Output final index file path
     string dst_mergePath = MERGED_INDEX_PATH;
-    if (FILEMODE_BIN) {
+    if (FILE_MODE_BIN) {
         outfile.open(dst_mergePath, ofstream::binary);
     } else {
         outfile.open(dst_mergePath);
@@ -318,7 +318,7 @@ void IndexBuilder::mergeIndex() {
         while (!pq.empty() && get<0>(pq.top()) == word) {
             auto [nextWord, nextInfile, nextPostings] = pq.top();
             pq.pop();
-            mergePostingLists(postings, nextPostings, true);  // Merge postings for the same word
+            _mergePostingLists(postings, nextPostings, true);  // Merge postings for the same word
 
             // Read next entry from that file and push it into the queue
             string line;
@@ -326,13 +326,13 @@ void IndexBuilder::mergeIndex() {
                 size_t colonPos = line.find(":");
                 string newWord = line.substr(0, colonPos);
                 string postingsStr = line.substr(colonPos + 1);
-                vector<pair<uint32_t, uint32_t>> newPostings = parsePostings(postingsStr);
+                vector<pair<uint32_t, uint32_t>> newPostings = _parsePostings(postingsStr);
                 pq.emplace(newWord, nextInfile, newPostings);
             }
         }
 
         // Write merged postings to output file
-        writeMergedPostings(outfile, word, postings);
+        _writeMergedPostings(outfile, word, postings);
 
         // Read next entry from the current file and push it into the queue
         string line;
@@ -340,7 +340,7 @@ void IndexBuilder::mergeIndex() {
             size_t colonPos = line.find(":");
             string newWord = line.substr(0, colonPos);
             string postingsStr = line.substr(colonPos + 1);
-            vector<pair<uint32_t, uint32_t>> newPostings = parsePostings(postingsStr);
+            vector<pair<uint32_t, uint32_t>> newPostings = _parsePostings(postingsStr);
             pq.emplace(newWord, infile, newPostings);
         }
     }
@@ -356,11 +356,11 @@ void IndexBuilder::mergeIndex() {
 }
 
 // Writes the page table to disk
-void IndexBuilder::WritePageTable() {
-    _PageTable.Write();
+void IndexBuilder::writePageTable() {
+    pageTable.write();
 }
 
 // Writes the lexicon to disk
-void IndexBuilder::WriteLexicon() {
-    _Lexicon.Write();
+void IndexBuilder::writeLexicon() {
+    lexicon.write();
 }

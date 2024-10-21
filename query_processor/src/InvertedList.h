@@ -9,26 +9,26 @@
 #include <filesystem>
 using namespace std;
 
-class InvertedList
-{
+
+class InvertedList {
 public:
     uint32_t allIndexSize;
-    map<string, vector<pair<uint32_t,uint32_t>>> HashWord;
-    uint32_t indexFileNum; //record write file num
+    map<string, vector<pair<uint32_t,uint32_t>>> hashWord;
+    uint32_t indexFileCount; //record write file num
 
     InvertedList();
     ~InvertedList();
     string getIndexFilePath();
     string getIndexFilePath(uint32_t);
 //    string getFinalIndexFilePath();
-    void Insert(string,uint32_t,uint32_t);
-    void Clear();
-    void Write();
+    void insertWord(string,uint32_t,uint32_t);
+    void clear();
+    void writeToFile();
 
 private:
-    bool creatIndexFolder();
-    bool clearIndexFolder(bool);
-    void countIndexFileNum();
+    bool _creatIndexFolder();
+    bool _clearIndexFolder(bool);
+    void _countIndexFiles();
 
 };
 
