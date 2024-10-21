@@ -33,7 +33,8 @@ public:
 //    void Insert(uint32_t, string, double, string);
     void insert(uint32_t, double);
     void clear();
-    void print();
+    void printToConsole();
+    void printToServer(ostream &out = cout);  // overload, for front-end
     string extractSnippets(string, string, string, vector<string>, vector<uint32_t>);
 
 //    // final project

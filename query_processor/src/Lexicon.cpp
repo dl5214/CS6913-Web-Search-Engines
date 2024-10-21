@@ -106,42 +106,43 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
     vector<uint32_t> docIdBlockSizeMetadata;  // Sizes of docID blocks
     vector<uint32_t> freqBlockSizeMetadata;  // Sizes of frequency blocks
 
-    uint32_t freq, docID;
-    bool isOk = true;
-    uint32_t prevdocID = 0;
+    uint32_t docId;
+    uint32_t freq;
+    bool isDone = false;
+    uint32_t prevDocId = 0;  // Keeps track of the previous document ID for delta encoding
 
     // Loop through the input postings string to extract and encode docIDs and frequencies
-    while (isOk) {
+    while (!isDone) {
         size_t space, comma;
         try {
             // Extract docID and frequency from the postings list
             space = arr.find(" ", beginPos);
             comma = arr.find(",", space);
-            docID = stoi(arr.substr(beginPos, space - beginPos));  // Extract docID
+            docId = stoi(arr.substr(beginPos, space - beginPos));  // Extract docID
 
             if (comma != string::npos) {
                 freq = stoi(arr.substr(space + 1, comma - space - 1));  // Extract frequency
             }
             else {
                 freq = stoi(arr.substr(space + 1));  // Last frequency in the string
-                isOk = false;  // No more postings to process
+                isDone = true;  // No more postings to process
             }
 
             // Encode docID as a difference (delta) from the previous docID using VarByte encoding
-            if (docID < prevdocID) {
-                cout << "nooo" << endl;
+            if (docId < prevDocId) {
+                cout << "Unexpected: DocId not ordered properly!" << endl;
             }
 
-            vector<uint8_t> endocID = varbyteEncode(docID - prevdocID);
+            vector<uint8_t> enDocId = varbyteEncode(docId - prevDocId);
             vector<uint8_t> enFreq = varbyteEncode(freq);  // Encode frequency
-            docIdList.push_back(endocID);  // Store encoded docID
+            docIdList.push_back(enDocId);  // Store encoded docID
             freqList.push_back(enFreq);  // Store encoded frequency
-            prevdocID = docID;  // Update previous docID
+            prevDocId = docId;  // Update previous docID
 
             // Store metadata for each block if it's full or we are at the end of the postings
-            if (docIdList.size() % POSTINGS_PER_BLOCK == 0 || !isOk) {
-                lastDocIdMetadata.push_back(docID);  // Store last docID of this block
-                prevdocID = 0;  // Reset for the next block
+            if (docIdList.size() % POSTINGS_PER_BLOCK == 0 || isDone) {
+                lastDocIdMetadata.push_back(docId);  // Store last docID of this block
+                prevDocId = 0;  // Reset for the next block
             }
         }
         catch (...) {
@@ -156,79 +157,85 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
     docNum = docIdList.size();  // Total number of postings (docID-frequency pairs)
 
     // Calculate sizes for the metadata (docID block size and frequency block size)
-    uint32_t docIDsize = 0, freqSize = 0;
+    uint32_t docIdSize = 0, freqSize = 0;
     for (int i = 0; i < docIdList.size(); i++) {
-        docIDsize += docIdList[i].size();  // Sum size of encoded docIDs
+        docIdSize += docIdList[i].size();  // Sum size of encoded docIDs
         freqSize += freqList[i].size();  // Sum size of encoded frequencies
 
         // If block is full, store the block sizes
         if ((i + 1) % POSTINGS_PER_BLOCK == 0 || i == docIdList.size() - 1) {
-            docIdBlockSizeMetadata.push_back(docIDsize);  // Store docID block size
+            docIdBlockSizeMetadata.push_back(docIdSize);  // Store docID block size
             freqBlockSizeMetadata.push_back(freqSize);  // Store frequency block size
-            docIDsize = 0;
+            docIdSize = 0;
             freqSize = 0;  // Reset for the next block
         }
     }
 
     // Write the blocks of postings and their metadata to the output file
-    int blocks_num = (int)lastDocIdMetadata.size();  // Total number of blocks
-    int pblocks = 0;  // Pointer to track blocks written so far
+    int numBlocks = (int)lastDocIdMetadata.size();  // Total number of blocks
+    int currBlockIdx = 0;  // Pointer to track blocks written so far
 
-    uint32_t blockNum = 0;  // Total number of blocks
+    uint32_t totalBlocks = 0;  // Total number of blocks
 
     // Pack as many blocks as possible into the current buffer size (BLOCK_SIZE)
-    while (pblocks < blocks_num) {
-        uint32_t nowbyte = 4;  // Start with 4 bytes for block length
-        int pbeginblock = pblocks;
+    while (currBlockIdx < numBlocks) {
+        uint32_t writtenBlockSize = 4;  // Start with 4 bytes for block length
+        int startBlockIdx = currBlockIdx;
 
         // Pack as many blocks as possible into the current buffer size (BLOCK_SIZE)
-        while (nowbyte <= BLOCK_SIZE && pblocks < blocks_num) {
-            uint32_t newsize = 4 * 3 + docIdBlockSizeMetadata[pblocks] + freqBlockSizeMetadata[pblocks];
-            if (nowbyte + newsize > BLOCK_SIZE) {
+        while (writtenBlockSize <= BLOCK_SIZE && currBlockIdx < numBlocks) {
+            uint32_t nextBlockSize = 4 * 3 + docIdBlockSizeMetadata[currBlockIdx] + freqBlockSizeMetadata[currBlockIdx];
+            if (writtenBlockSize + nextBlockSize > BLOCK_SIZE) {
                 break;  // Stop if the new block doesn't fit
             }
-            pblocks += 1;
-            nowbyte += newsize;  // Update current byte count
+            currBlockIdx += 1;
+            writtenBlockSize += nextBlockSize;  // Update current byte count
         }
 
         // Write metadata for the current block (docIDs, block sizes)
-        blockNum += 1;
-        uint32_t block_len = pblocks - pbeginblock;
-        outfile.write(reinterpret_cast<const char *>(&block_len), sizeof(uint32_t));  // Write block length
+        totalBlocks += 1;
+        uint32_t blockLen = currBlockIdx - startBlockIdx;
+        outfile.write(reinterpret_cast<const char *>(&blockLen), sizeof(uint32_t));  // Write block length
 
         // Write last docID, docID block sizes, and frequency block sizes for each block
-        for (int i = pbeginblock; i < pblocks; i++) {
+        for (int i = startBlockIdx; i < currBlockIdx; i++) {
             outfile.write(reinterpret_cast<const char *>(&lastDocIdMetadata[i]), sizeof(uint32_t));
             // if(term=="0") cout << metadata_last_docID[i] << " ";
         }
         // if(term=="0") cout << endl;
-        for (int i = pbeginblock; i < pblocks; i++) {
+        for (int i = startBlockIdx; i < currBlockIdx; i++) {
             outfile.write(reinterpret_cast<const char *>(&docIdBlockSizeMetadata[i]), sizeof(uint32_t));
             // if(term=="0") cout<<metadata_docID_block_sizes[i]<<" ";
         }
         // if(term=="0") cout << endl;
-        for (int i = pbeginblock; i < pblocks; i++) {
+        for (int i = startBlockIdx; i < currBlockIdx; i++) {
             outfile.write(reinterpret_cast<const char *>(&freqBlockSizeMetadata[i]), sizeof(uint32_t));
             // if(term=="0") cout << metadata_freq_block_sizes[i] << " ";
         }
 
         // Write the actual postings (docID and frequency pairs)
-        for (int i = pbeginblock; i < pblocks; i++) {
+        for (int i = startBlockIdx; i < currBlockIdx; i++) {
             // Write encoded docIDs for each block
             for (int j = i * POSTINGS_PER_BLOCK; j < (i + 1) * POSTINGS_PER_BLOCK && j < docIdList.size(); j++) {
-                vector<uint8_t> endocID = docIdList[j];
-                for (int k = 0; k < endocID.size(); k++) {
-                    // Write each byte
-                    outfile.write(reinterpret_cast<const char *>(&endocID[k]), sizeof(uint8_t));
+                vector<uint8_t> enDocId = docIdList[j];
+//                for (int k = 0; k < endocID.size(); k++) {
+//                    // Write each byte
+//                    outfile.write(reinterpret_cast<const char *>(&endocID[k]), sizeof(uint8_t));
+//                }
+                for (unsigned char & k : enDocId) {  // Write each byte
+                    outfile.write(reinterpret_cast<const char *>(&k), sizeof(uint8_t));
                 }
             }
             // Write encoded frequencies for each block
             for (int j = i * POSTINGS_PER_BLOCK; j < (i + 1) * POSTINGS_PER_BLOCK && j < docIdList.size(); j++) {
                 vector<uint8_t> enFreq = freqList[j];
-                for (int k = 0; k < enFreq.size(); k++) {
-                    // Write each byte
-                    outfile.write(reinterpret_cast<const char *>(&enFreq[k]), sizeof(uint8_t));
+                for (unsigned char & k : enFreq) {  // Write each byte
+                    outfile.write(reinterpret_cast<const char *>(&k), sizeof(uint8_t));
                 }
+//                for (int k = 0; k < enFreq.size(); k++) {
+//                    // Write each byte
+//                    outfile.write(reinterpret_cast<const char *>(&enFreq[k]), sizeof(uint8_t));
+//                }
             }
         }
         // file left blocks in 0
@@ -239,7 +246,7 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
         // }
     }
 
-    return blockNum;  // Return the total number of blocks written
+    return totalBlocks;  // Return the total number of blocks written
 }
 
 
@@ -338,21 +345,27 @@ void Lexicon::load() {
         exit(0);
     }
     lexiconList.clear();
-//    while (!infile.eof()) {
-//        string term;
-//        LexiconItem lexItem;
-//        infile >> term;
-//        infile >> lexItem.beginPos >> lexItem.endPos >> lexItem.docNum >> lexItem.blockNum;
-//        lexiconList[term] = lexItem;
-//    }
-    string term;
-    while (infile >> term) {
+
+    bool firstOccurrence[26] = {false};  // for debug purpose
+
+    while (!infile.eof()) {
+        string term;
         LexiconItem lexItem;
-        if (DEBUG_MODE) {
-            cout << "read lexiconItem: " << lexItem.beginPos << " " << lexItem.endPos << " "
-            << lexItem.docNum << " " << lexItem.blockNum << endl;
-        }
+        infile >> term;
         infile >> lexItem.beginPos >> lexItem.endPos >> lexItem.docNum >> lexItem.blockNum;
+        if (DEBUG_MODE) {
+            char firstChar = tolower(term[0]);
+            if (firstChar >= 'a' && firstChar <= 'z') {
+                int index = firstChar - 'a';
+                if (!firstOccurrence[index]) {
+                    firstOccurrence[index] = true;
+                    if (DEBUG_MODE) {
+                        cout << "read lexiconItem: " << term << " " << lexItem.beginPos << " "
+                             << lexItem.endPos << " " << lexItem.docNum << " " << lexItem.blockNum << endl;
+                    }
+                }
+            }
+        }
         lexiconList[term] = lexItem;
     }
     cout << "There are " << lexiconList.size() << " words in Lexicon Structure" << endl;

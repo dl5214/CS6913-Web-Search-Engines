@@ -44,15 +44,6 @@ void QueryProcessor::_openList(uint32_t offset,
     freqSizeList.clear();
     int index_fd = open(lexicon.indexPath.c_str(), O_RDONLY);  // Open index file
 
-    if (DEBUG_MODE) {
-        if (index_fd == -1) {
-            perror("Error opening index file");  // Print the error message if file open fails
-            return;
-        } else {
-            cout << "Index file opened successfully: " << lexicon.indexPath << endl;
-        }
-    }
-
     off_t pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);  // Align offset to the page boundary
     size_t length = MAX_META_SIZE;
     struct stat sb;
@@ -62,9 +53,9 @@ void QueryProcessor::_openList(uint32_t offset,
         close(index_fd);
         return;
     }
-    else if (DEBUG_MODE) {
-        cout << "offset = " << offset << ", length = " << length << ", sb.st_size = " << sb.st_size << endl;
-    }
+//    else if (DEBUG_MODE) {
+//        cout << "offset = " << offset << ", length = " << length << ", sb.st_size = " << sb.st_size << endl;
+//    }
 
     // Adjust the length if it exceeds the file size
     if (offset + length > sb.st_size)
@@ -76,21 +67,21 @@ void QueryProcessor::_openList(uint32_t offset,
         perror("mmap failed");
         return;
     }
-    else if (DEBUG_MODE) {
-        cout << "mmap successful for offset: " << offset << " with length: " << length << endl;
-    }
+//    else if (DEBUG_MODE) {
+//        cout << "mmap successful for offset: " << offset << " with length: " << length << endl;
+//    }
 
     // Read metadata for the current block
     int startIndex = offset - pa_offset;
     memcpy(&metadataSize, ret + startIndex, sizeof(metadataSize));  // Read metadata size
-    if (DEBUG_MODE) {
-        cout << "startIndex = " << startIndex << ", plus size of metadataSize = " << sizeof(metadataSize) << endl;
-    }
+//    if (DEBUG_MODE) {
+//        cout << "startIndex = " << startIndex << ", plus size of metadataSize = " << sizeof(metadataSize) << endl;
+//    }
 
     startIndex += sizeof(metadataSize);
-    if (DEBUG_MODE) {
-        cout << "Updated startIndex = " << startIndex << endl;
-    }
+//    if (DEBUG_MODE) {
+//        cout << "Updated startIndex = " << startIndex << endl;
+//    }
 
     // Extract last document IDs, document sizes, and frequency sizes for the block
     for (int i = 0; i < metadataSize; i++) {
@@ -98,82 +89,182 @@ void QueryProcessor::_openList(uint32_t offset,
         memcpy(&lastDocId, ret + startIndex, sizeof(lastDocId));
         lastDocIdList.push_back(lastDocId);
         startIndex += sizeof(lastDocId);
-        if (DEBUG_MODE) {
-            cout << "Read lastDocId = " << lastDocId << ", Updated startIndex = " << startIndex << endl;
-        }
+//        if (DEBUG_MODE) {
+//            cout << "Read lastDocId = " << lastDocId << ", Updated startIndex = " << startIndex << endl;
+//        }
     }
     for (int i = 0; i < metadataSize; i++) {
         uint32_t docIdSize;
         memcpy(&docIdSize, ret + startIndex, sizeof(docIdSize));
         docIdSizeList.push_back(docIdSize);
         startIndex += sizeof(docIdSize);
-        if (DEBUG_MODE) {
-            cout << "Read docIdSize = " << docIdSize << ", Updated startIndex = " << startIndex << endl;
-        }
+//        if (DEBUG_MODE) {
+//            cout << "Read docIdSize = " << docIdSize << ", Updated startIndex = " << startIndex << endl;
+//        }
     }
     for (int i = 0; i < metadataSize; i++) {
         uint32_t freqSize;
         memcpy(&freqSize, ret + startIndex, sizeof(freqSize));
         freqSizeList.push_back(freqSize);
         startIndex += sizeof(freqSize);
-        if (DEBUG_MODE) {
-            cout << "Read freqSize = " << freqSize << ", Updated startIndex = " << startIndex << endl;
-        }
+//        if (DEBUG_MODE) {
+//            cout << "Read freqSize = " << freqSize << ", Updated startIndex = " << startIndex << endl;
+//        }
     }
     // Unmap the memory-mapped file and close it
-    if (DEBUG_MODE) {
-        cout << "Unmapping memory and closing file descriptor." << endl;
-    }
+//    if (DEBUG_MODE) {
+//        cout << "Unmapping memory and closing file descriptor." << endl;
+//    }
     munmap(ret, length + offset - pa_offset);
     close(index_fd);
 }
 
 
-// Placeholder for frequency retrieval of a term in a specific document
-uint32_t QueryProcessor::_getFreq(string term, uint32_t docID) {
-    return 0;
+vector<pair<uint32_t, uint32_t>> QueryProcessor::_getPostingsList(const string &term) {
+    vector<pair<uint32_t, uint32_t>> postingsList;
+    // Extract term's block data from the lexicon
+    uint32_t beginPos = lexicon.lexiconList[term].beginPos;
+    uint32_t endPos = lexicon.lexiconList[term].endPos;
+    uint32_t blockNum = lexicon.lexiconList[term].blockNum;
+
+    // Loop through the blocks to decode postings
+    for (int i = 0; i < blockNum; i++) {
+        uint32_t metadataSize;
+        vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
+
+        // Open the block and get metadata
+        _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
+
+        // For each block, decode the postings list
+        for (int j = 0; j < metadataSize; j++) {
+            vector<uint32_t> docIDs = _decodeChunk(beginPos, beginPos + docIdSizeList[j]);
+            vector<uint32_t> freqs = _decodeChunk(beginPos + docIdSizeList[j], beginPos + docIdSizeList[j] + freqSizeList[j]);
+
+            // Combine docIDs and freqs into pairs and add to postings list
+            for (int k = 0; k < docIDs.size(); k++) {
+                postingsList.emplace_back(docIDs[k], freqs[k]);
+            }
+        }
+
+        // Move to the next block
+        beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
+    }
+
+    return postingsList;
 }
 
 
+ListPointer QueryProcessor::_openList(string term) {
+    ListPointer lp;
+
+    // Check if the term exists in the lexicon
+    if (lexicon.lexiconList.find(term) != lexicon.lexiconList.end()) {
+        // Retrieve the LexiconItem for the term
+        LexiconItem lexItem = lexicon.lexiconList[term];
+        uint32_t beginPos = lexItem.beginPos;
+        uint32_t endPos = lexItem.endPos;
+        uint32_t blockNum = lexItem.blockNum;
+
+        // Decode the docIDs and frequencies from the index file
+        lp.docIDs.clear();
+        lp.freqs.clear();
+
+        // Loop through all blocks to decode docIDs and frequencies
+        for (uint32_t block = 0; block < blockNum; ++block) {
+            uint32_t blockStart = beginPos + block * (endPos - beginPos) / blockNum;
+            uint32_t blockEnd = blockStart + (endPos - beginPos) / blockNum;
+
+            // Decode docIDs and frequencies for the current block
+            vector<uint32_t> decodedDocIDs = _decodeChunk(blockStart, blockEnd);
+            vector<uint32_t> decodedFreqs = _decodeChunk(blockEnd, blockEnd + decodedDocIDs.size() * sizeof(uint32_t));
+
+            // Append the decoded data to the list pointer
+            lp.docIDs.insert(lp.docIDs.end(), decodedDocIDs.begin(), decodedDocIDs.end());
+            lp.freqs.insert(lp.freqs.end(), decodedFreqs.begin(), decodedFreqs.end());
+        }
+
+        lp.listSize = lp.docIDs.size();  // Set the size of the list
+        lp.isOpen = true;  // Mark the list as open
+    } else {
+        cerr << "Term not found in lexicon: " << term << endl;
+    }
+
+    return lp;
+}
+
+
+void QueryProcessor::_closeList(ListPointer &lp) {
+    lp.isOpen = false;  // Mark the list as closed
+    lp.index = 0;  // Reset the index
+}
+
+// Frequency retrieval of a term in a specific document
+uint32_t QueryProcessor::_getFreq(string term, uint32_t docID) {
+    // Get the postings list for the term
+    vector<pair<uint32_t, uint32_t>> postingsList = _getPostingsList(term);
+
+    // Search for the document ID in the postings list
+    for (auto &posting : postingsList) {
+        if (posting.first == docID) {
+            return posting.second;  // Return the frequency
+        }
+    }
+
+    // If docID is not found, return 0
+    return 0;
+}
+
+// Function to return the next document ID greater than or equal to the given docID
+uint32_t QueryProcessor::_nextGEQ(ListPointer &lp, uint32_t docID) {
+    // Traverse the docIDs in the ListPointer
+    while (lp.index < lp.listSize) {
+        if (lp.docIDs[lp.index] >= docID) {
+            return lp.docIDs[lp.index];  // Return the docID if it's greater than or equal to the given docID
+        }
+        lp.index++;  // Move to the next docID
+    }
+    return MAX_DOC_ID;  // Return a sentinel value if no docID >= docID is found
+}
+
 // Handles Term-At-A-Time (TAAT) query processing, supporting disjunctive (OR) and conjunctive (AND) queries
-void QueryProcessor::_queryTAAT(vector<string> word_list, int queryMode) {
+void QueryProcessor::_queryTAAT(vector<string> wordList, int queryMode) {
     _searchResultList.clear();  // Clear previous search results
 
     if (queryMode == DISJUNCTIVE) {  // OR query
-        vector<double> score_array(pageTable.totalDoc, 0);  // Array to hold BM25 scores
+        vector<double> scoreList(pageTable.totalDoc, 0);  // Array to hold BM25 scores
         // Iterate through each term and calculate its score
-        for (int i = 0; i < word_list.size(); i++) {
-            string term = word_list[i];
+        for (int i = 0; i < wordList.size(); i++) {
+            string term = wordList[i];
             try {
-                _decodeBlocks(term, score_array);  // Update score array using the term's contribution
+                _decodeBlocks(term, scoreList);  // Update score array using the term's contribution
             }
             catch (...) {
                 cerr << "exception" << endl;
             }
         }
         // Select the top-k highest scores
-        _getTopK(score_array, NUM_TOP_RESULT);
+        _getTopK(scoreList, NUM_TOP_RESULT);
     }
     else if (queryMode == CONJUNCTIVE) {  // AND query
-        // find minterm
-        string minterm = word_list[0];  // Initialize with the first term
-        uint32_t mindocNum = lexicon.lexiconList[minterm].docNum;  // Number of documents containing the term
+        // find minTerm
+        string minTerm = wordList[0];  // Initialize with the first term
+        uint32_t minDocNum = lexicon.lexiconList[minTerm].docNum;  // Number of documents containing the term
         // Find the term with the smallest number of documents
-        for (int i = 1; i < word_list.size(); i++) {
-            string term = word_list[i];
-            if (lexicon.lexiconList[term].docNum < mindocNum) {
-                minterm = term;
-                mindocNum = lexicon.lexiconList[term].docNum;
+        for (int i = 1; i < wordList.size(); i++) {
+            string term = wordList[i];
+            if (lexicon.lexiconList[term].docNum < minDocNum) {
+                minTerm = term;
+                minDocNum = lexicon.lexiconList[term].docNum;
             }
         }
 
         // Build the initial score hash based on the smallest term
         map<uint32_t, double> score_hash;
-        _decodeBlocks(minterm, score_hash, true);
+        _decodeBlocks(minTerm, score_hash, true);
 
         // Update score hash with other terms
-        for (string word : word_list) {
-            if (word == minterm)
+        for (string word : wordList) {
+            if (word == minTerm)
                 continue;
             try {
                 _updateScoreHash(word, score_hash, false);
@@ -187,6 +278,91 @@ void QueryProcessor::_queryTAAT(vector<string> word_list, int queryMode) {
         _getTopK(score_hash, NUM_TOP_RESULT);
     }
     // index_infile.close();
+}
+
+
+void QueryProcessor::_queryDAAT(vector<string> wordList, int queryMode) {
+    _searchResultList.clear();  // Clear previous results
+
+    // Priority queue to hold top k results based on BM25 score
+    priority_queue<pair<double, uint32_t>, vector<pair<double, uint32_t>>, greater<>> pq;  // Min-heap
+    unordered_map<uint32_t, double> docScoreMap;  // Store scores for each docID
+
+    vector<ListPointer> lpList;
+    // Open posting lists for each term
+    for (const string &term : wordList) {
+        ListPointer lp = _openList(term);
+        if (lp.isOpen) {
+            lpList.push_back(lp);
+        }
+    }
+
+    // Handle conjunctive (AND) mode
+    if (queryMode == CONJUNCTIVE) {
+        // Find the first docID that exists in all lists
+        uint32_t currentDocID = lpList[0].docIDs[0];
+        for (ListPointer &lp : lpList) {
+            currentDocID = max(currentDocID, lp.docIDs[0]);
+        }
+
+        while (currentDocID != MAX_DOC_ID) {
+            bool allMatch = true;
+            double scoreSum = 0;
+
+            // Check if all terms have this document
+            for (ListPointer &lp : lpList) {
+                uint32_t nextDocID = _nextGEQ(lp, currentDocID);
+                if (nextDocID != currentDocID) {
+                    allMatch = false;
+                    currentDocID = nextDocID;  // Update to the next docID to check
+                    break;
+                }
+                // Accumulate BM25 score for this term and current docID
+                uint32_t freq = lp.freqs[lp.index];
+                scoreSum += _getBM25(wordList[&lp - &lpList[0]], currentDocID, freq);
+            }
+
+            // If all terms match the current docID, add it to the result map
+            if (allMatch) {
+                docScoreMap[currentDocID] = scoreSum;
+                currentDocID = _nextGEQ(lpList[0], currentDocID + 1);  // Move to next docID
+            }
+        }
+    }
+        // Handle disjunctive (OR) mode
+    else if (queryMode == DISJUNCTIVE) {
+        // Process each list and accumulate scores in the map
+        for (ListPointer &lp : lpList) {
+            while (lp.index < lp.listSize) {
+                uint32_t docID = lp.docIDs[lp.index];
+                uint32_t freq = lp.freqs[lp.index];
+
+                // Check if the score for the document was already calculated for this term
+                if (docScoreMap.find(docID) == docScoreMap.end()) {
+                    // If it's the first time encountering this document, calculate the BM25 score
+                    docScoreMap[docID] = _getBM25(wordList[&lp - &lpList[0]], docID, freq);
+                }
+                else {
+                    // Only accumulate BM25 score once per term per document
+                    docScoreMap[docID] += _getBM25(wordList[&lp - &lpList[0]], docID, freq);
+                }
+
+                lp.index++;  // Move to the next docID in this list
+            }
+        }
+    }
+
+    // Enqueue top results into priority queue
+    for (const auto &[docID, score] : docScoreMap) {
+        pq.push({score, docID});
+        if (pq.size() > NUM_TOP_RESULT) pq.pop();  // Keep only the top results
+    }
+
+    // Gather top results from the priority queue
+    while (!pq.empty()) {
+        _searchResultList.insert(pq.top().second, pq.top().first);  // Insert result: {docID, score}
+        pq.pop();
+    }
 }
 
 
@@ -214,29 +390,23 @@ vector<string> QueryProcessor::_splitQuery(string query) {
 }
 
 
-// Test query function to perform a sample search and output results
-void QueryProcessor::testQuery() {
-    string query = "cat dog mouse";
-    clock_t query_start = clock();
-    vector<string> word_list = _splitQuery(query);  // Split the query into words
-    if (!word_list.size()) {
-        cout << "unlegal query" << endl;
-        return;
-    }
-    _queryTAAT(word_list, 0);  // Perform the query
-    clock_t query_end = clock();
-    clock_t query_time = query_end - query_start;
-    cout << "search using " << setiosflags(ios::fixed)
-              << setprecision(2) << double(query_time) / 1000000 << "s" << endl;
-
-//    // Find and update snippets for each result
-//    clock_t snippet_begin = clock();
-//    _updateSnippets(word_list,vector<uint32_t>());
-//    clock_t snippet_end = clock();
-//    clock_t snippet_time = snippet_end - snippet_begin;
-//    cout << "find snippets using " << double(snippet_time) / 1000000 << "s" << endl;
-//    _searchResultList.print();
-}
+//// Test query function to perform a sample search and output results
+//void QueryProcessor::testQuery() {
+//    string query = "cat dog mouse";
+//    clock_t query_start = clock();
+//    vector<string> word_list = _splitQuery(query);  // Split the query into words
+//    if (!word_list.size()) {
+//        cout << "unlegal query" << endl;
+//        return;
+//    }
+////    _queryTAAT(word_list, 0);  // Perform the TAAT query
+//    _queryDAAT(word_list, 0);  // Perform the DAAT query
+//    clock_t query_end = clock();
+//    clock_t query_time = query_end - query_start;
+//    cout << "search using " << setiosflags(ios::fixed)
+//              << setprecision(2) << double(query_time) / 1000000 << "s" << endl;
+//
+//}
 
 
 // Main query loop for interactive querying
@@ -275,20 +445,12 @@ void QueryProcessor::queryLoop() {
         clock_t query_start = clock();
         vector<string> queryWordList = _splitQuery(query);  // Split the query
 
-        if (DEBUG_MODE) {
-            cout << "Size of queryWordList: " << queryWordList.size() << endl;
-        }
-        for(int i=0; DEBUG_MODE and i < queryWordList.size(); i++) {
-            cout << "Item in word_list: " << queryWordList[i] << endl;
-            cout << "Corresponding docNum: " << lexicon.lexiconList[queryWordList[i]].docNum << endl;
-//            cout<<lexicon.lexiconList[queryWordList[i]].docNum<<endl;
-        }
-
         if (!queryWordList.size()) {
             cout << "unlegal query" << endl;
             continue;
         }
-        _queryTAAT(queryWordList, queryMode);  // Perform the query
+        _queryTAAT(queryWordList, queryMode);  // Perform the TAAT query
+//        _queryDAAT(queryWordList, queryMode);  // Perform the DAAT query
         clock_t query_end = clock();
         clock_t query_time = query_end - query_start;
         cout << "search using " << double(query_time) / 1000000 << "s" << endl;
@@ -300,7 +462,7 @@ void QueryProcessor::queryLoop() {
 //        clock_t snippet_time = snippet_end - snippet_begin;
 //        cout << "find snippets using " << double(snippet_time) / 1000000 << "s" << endl;
 
-        _searchResultList.print();
+        _searchResultList.printToConsole();
     }
 }
 
@@ -317,36 +479,36 @@ void QueryProcessor::_decodeBlocks(string term, vector<double> &score_array) {
 
 
 // Decodes a single block of postings and updates the score array
-void QueryProcessor::_decodeBlock(string term, uint32_t &beginp, vector<double> &score_array) {
-    uint32_t metadata_size;
-    vector<uint32_t> lastdocID_list, docIDsize_list, freqSize_list;
+void QueryProcessor::_decodeBlock(string term, uint32_t &beginPos, vector<double> &scoreList) {
+    uint32_t metadataSize;
+    vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
     // Read the metadata
-    _openList(beginp, metadata_size, lastdocID_list, docIDsize_list, freqSize_list);
+    _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
 
     // Decode docID and frequency chunks
-    vector<uint32_t> docID64, freq64;
-    uint32_t metabyte = 4 + 3 * (metadata_size)*4;
-    uint32_t docIDp = beginp + metabyte;
-    uint32_t freqp = docIDp + docIDsize_list[0];
+    vector<uint32_t> docId64, freq64;
+    uint32_t metaByte = 4 + 3 * (metadataSize)*4;
+    uint32_t docIdPos = beginPos + metaByte;
+    uint32_t freqPos = docIdPos + docIdSizeList[0];
 
-    for (int i = 0; i < metadata_size; i++) {
-        docID64 = _decodeChunk(docIDp, docIDp + docIDsize_list[i]);  // Decode docID list
-        freq64 = _decodeChunk(freqp, freqp + freqSize_list[i]);  // Decode frequency list
-        if (i != metadata_size - 1) {
-            docIDp += docIDsize_list[i] + freqSize_list[i];
-            freqp += freqSize_list[i] + docIDsize_list[i + 1];
+    for (int i = 0; i < metadataSize; i++) {
+        docId64 = _decodeChunk(docIdPos, docIdPos + docIdSizeList[i]);  // Decode docID list
+        freq64 = _decodeChunk(freqPos, freqPos + freqSizeList[i]);  // Decode frequency list
+        if (i != metadataSize - 1) {
+            docIdPos += docIdSizeList[i] + freqSizeList[i];
+            freqPos += freqSizeList[i] + docIdSizeList[i + 1];
         }
 
         // Increment document IDs and update scores using BM25
         uint32_t prev_docID = 0;
-        for (int i = 0; i < docID64.size(); i++) {
-            prev_docID += docID64[i];
-            score_array[prev_docID] += _getBM25(term, prev_docID, freq64[i]);
+        for (int i = 0; i < docId64.size(); i++) {
+            prev_docID += docId64[i];
+            scoreList[prev_docID] += _getBM25(term, prev_docID, freq64[i]);
         }
     }
 
     // Update the start position for the next block
-    beginp += _getMetaSize(metadata_size, lastdocID_list, docIDsize_list, freqSize_list);
+    beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
 }
 
 
@@ -504,13 +666,6 @@ void QueryProcessor::_getTopK(map<uint32_t, double> &score_hash, int k) {
             maxQueue.pop();  // Remove the lowest score when we exceed k elements
         }
     }
-//    for (map<uint32_t, double>::iterator it = score_hash.begin(); it != score_hash.end(); ++it) {
-//
-//        maxQueue.push(QueueDouble(it->second, it->first));  // Add the current score and its docID
-//        if (maxQueue.size() > k) {
-//            maxQueue.pop();  // Remove the lowest score when we exceed k elements
-//        }
-//    }
 
     // Extract the top-k elements from the priority queue and insert them into the result list
     while (!maxQueue.empty()) {
@@ -618,6 +773,32 @@ void QueryProcessor::_updateScoreHash(string term, map<uint32_t, double> &score_
 
         ++it;  // Move to the next document ID
     }
+}
+
+
+// For front-end Communication
+string QueryProcessor::processQuery(const string &query, int queryMode) {
+    vector<string> queryWordList = _splitQuery(query);
+    ostringstream resultStream;
+
+    if (queryWordList.empty()) {
+        resultStream << "Invalid query format." << endl;
+        return resultStream.str();
+    }
+
+    // Based on queryMode, perform the appropriate query (CONJUNCTIVE or DISJUNCTIVE)
+    if (queryMode == CONJUNCTIVE) {
+        _queryTAAT(queryWordList, CONJUNCTIVE);
+    } else if (queryMode == DISJUNCTIVE) {
+        _queryTAAT(queryWordList, DISJUNCTIVE);
+    } else {
+        resultStream << "Invalid query mode. Please use 0 for CONJUNCTIVE or 1 for DISJUNCTIVE." << endl;
+        return resultStream.str();
+    }
+
+    // Print results to the result stream
+    _searchResultList.printToServer(resultStream);
+    return resultStream.str();
 }
 
 //// Updates the snippet results for each search result by finding snippets in the document content

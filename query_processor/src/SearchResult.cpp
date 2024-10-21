@@ -30,7 +30,7 @@ void SearchResultList::clear() {
     resultList.clear();
 }
 
-void SearchResultList::print() {
+void SearchResultList::printToConsole() {
     cout << "Here are the Top " << NUM_TOP_RESULT << " results:" << std::endl;
     for (int i = resultList.size() - 1; i >= 0; i--)
     {
@@ -41,6 +41,15 @@ void SearchResultList::print() {
         cout << endl;
     }
 }
+
+
+// For front-end
+void SearchResultList::printToServer(ostream &out) {
+    for (const auto &result : resultList) {
+        out << "DocId: " << result.docId << ", Score: " << result.score << endl;
+    }
+}
+
 
 //string SearchResultList::extractSnippets(string org, string bstr, string estr, vector<string> word_list, vector<uint32_t> word_docNum_list)
 //{
