@@ -45,10 +45,13 @@ using namespace std;
 #define NUM_TOP_RESULT 20
 
 #define DEBUG_MODE 1
-#define INDEX_FLAG 0 //whether to build intermediate index
+#define PARSE_INDEX_FLAG 0 //whether to build intermediate index
 #define PAGE_TABLE_FLAG 0 //whether write Page Table
-#define MERGE_FLAG 1 //whether to merge index
+#define MERGE_FLAG 0 //whether to merge index
 #define LEXICON_FLAG 1 //whether write Lexicon Structure
 #define DELETE_INTERMEDIATE 0
+
+#define LOAD_FLAG 0 //whether to load lexicon and pagetable into main memory
+#define QUERY_FLAG 0
 
 #endif

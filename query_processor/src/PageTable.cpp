@@ -72,3 +72,46 @@ void PageTable::print() {
         doc.print();
     }
 }
+
+
+void PageTable::load() {
+
+    ifstream infile;
+    string path;
+    if (FILE_MODE_BIN) {  // FILEMODE == BIN
+        path = string(PAGE_TABLE_PATH).substr(0, string(PAGE_TABLE_PATH).find_last_of('/')) + "/BIN_" + string(PAGE_TABLE_PATH).substr(string(PAGE_TABLE_PATH).find_last_of('/') + 1);
+        infile.open(path, ofstream::binary);
+    }
+    else {  // FILEMODE == ASCII
+        path = string(PAGE_TABLE_PATH).substr(0, string(PAGE_TABLE_PATH).find_last_of('/')) + "/ASCII_" + string(PAGE_TABLE_PATH).substr(string(PAGE_TABLE_PATH).find_last_of('/') + 1);
+        infile.open(path);
+    }
+    if (DEBUG_MODE) {
+        cout << "page table file path: " << path << endl;
+    }
+    if(!infile){
+        cout << "can not read " << path << endl;
+        exit(0);
+    }
+    pageTable.clear();
+
+    while(!infile.eof()) {
+        Document newDoc;
+//        if (DEBUG_MODE and newDoc.docId % 100000 == 0) {
+//            cout << newDoc.docId << " "
+////            <<  newDoc.docNo << " "
+//            << newDoc.dataLength << " " << newDoc.wordCount << endl;
+//        }
+        infile >> newDoc.docId
+//        >> newDoc.docNo
+        >> newDoc.dataLength >> newDoc.wordCount;
+//        >> newdoc.gzp;
+//        >>newdoc.url>>newdoc.gzp;
+        pageTable.push_back(newDoc);
+    }
+    totalDoc = pageTable.size();
+    if (DEBUG_MODE) {
+        cout<< "totalDoc of pageTable: " << totalDoc << endl;
+    }
+    _getAvgDataLen();
+}

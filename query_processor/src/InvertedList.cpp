@@ -11,7 +11,7 @@ InvertedList::InvertedList() {
     allIndexSize = 0;
     indexFileCount = 0;
 
-    if (!INDEX_FLAG) {
+    if (!PARSE_INDEX_FLAG) {
         _countIndexFiles();
         return;
     }
@@ -81,7 +81,8 @@ void InvertedList::insertWord(string word, uint32_t docID, uint32_t freq) {
         if (allIndexSize + POST_BYTES > INDEX_CHUNK_SIZE)
             indexChunkFull = true;
         else {
-            hashWord[word].push_back(pair<uint32_t, uint32_t>(docID, freq));
+//            hashWord[word].push_back(pair<uint32_t, uint32_t>(docID, freq));
+            hashWord[word].emplace_back(docID, freq);
             allIndexSize += POST_BYTES;
         }
     }

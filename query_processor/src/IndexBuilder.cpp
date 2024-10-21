@@ -29,12 +29,10 @@ void SortedPosting::print() {
 }
 
 // Constructor for IndexBuilder class
-IndexBuilder::IndexBuilder() {
-}
+IndexBuilder::IndexBuilder() = default;
 
 // Destructor for IndexBuilder class
-IndexBuilder::~IndexBuilder() {
-}
+IndexBuilder::~IndexBuilder() = default;
 
 // Extracts a substring from 'org' between 'bstr' and 'estr'
 string IndexBuilder::_extractContent(string org, string bstr, string estr) {
@@ -188,7 +186,7 @@ void IndexBuilder::readData(const char *filepath) {
     }
 
     // Write the page table to the disk if necessary
-    if (PAGE_TABLE_FLAG & INDEX_FLAG) {
+    if (PAGE_TABLE_FLAG & PARSE_INDEX_FLAG) {
         clock_t write_page_begin = clock();
         writePageTable();
         clock_t write_page_end = clock();
@@ -353,6 +351,11 @@ void IndexBuilder::mergeIndex() {
     }
 
     outfile.close();  // Close the output file
+}
+
+void IndexBuilder::buildLexicon(){
+    string path = invertedList.getIndexFilePath(invertedList.indexFileCount - 1);
+    lexicon.build(path);
 }
 
 // Writes the page table to disk

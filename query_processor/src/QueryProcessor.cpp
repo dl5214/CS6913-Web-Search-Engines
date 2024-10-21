@@ -34,50 +34,96 @@ double QueryProcessor::_getBM25(string term, uint32_t docID, uint32_t freq) {
 
 
 // Reads metadata from the index file using mmap for efficient I/O
-void QueryProcessor::_openList(uint32_t offset, uint32_t &metadata_size,
-                          vector<uint32_t> &lastdocID_list, vector<uint32_t> &docIDsize_list,
-                          vector<uint32_t> &freqSize_list) {
-    lastdocID_list.clear();
-    docIDsize_list.clear();
-    freqSize_list.clear();
+void QueryProcessor::_openList(uint32_t offset,
+                               uint32_t &metadataSize,
+                               vector<uint32_t> &lastDocIdList,
+                               vector<uint32_t> &docIdSizeList,
+                               vector<uint32_t> &freqSizeList) {
+    lastDocIdList.clear();
+    docIdSizeList.clear();
+    freqSizeList.clear();
     int index_fd = open(lexicon.indexPath.c_str(), O_RDONLY);  // Open index file
+
+    if (DEBUG_MODE) {
+        if (index_fd == -1) {
+            perror("Error opening index file");  // Print the error message if file open fails
+            return;
+        } else {
+            cout << "Index file opened successfully: " << lexicon.indexPath << endl;
+        }
+    }
+
     off_t pa_offset = offset & ~(sysconf(_SC_PAGE_SIZE) - 1);  // Align offset to the page boundary
     size_t length = MAX_META_SIZE;
     struct stat sb;
+    // Check if the file size is valid before proceeding with mmap
+    if (fstat(index_fd, &sb) == -1) {
+        perror("Error getting file size with fstat");
+        close(index_fd);
+        return;
+    }
+    else if (DEBUG_MODE) {
+        cout << "offset = " << offset << ", length = " << length << ", sb.st_size = " << sb.st_size << endl;
+    }
+
+    // Adjust the length if it exceeds the file size
     if (offset + length > sb.st_size)
         length = sb.st_size - offset;
     // Execute mmap: Memory-map the file for efficient data access
     char *ret = (char *)mmap(NULL, length + offset - pa_offset, PROT_READ, MAP_PRIVATE, index_fd, pa_offset);
     if (ret == MAP_FAILED) {
         close(index_fd);
-        perror("mmap");
+        perror("mmap failed");
         return;
+    }
+    else if (DEBUG_MODE) {
+        cout << "mmap successful for offset: " << offset << " with length: " << length << endl;
     }
 
     // Read metadata for the current block
     int startIndex = offset - pa_offset;
-    memcpy(&metadata_size, ret + startIndex, sizeof(metadata_size));  // Read metadata size
-    startIndex += sizeof(metadata_size);
+    memcpy(&metadataSize, ret + startIndex, sizeof(metadataSize));  // Read metadata size
+    if (DEBUG_MODE) {
+        cout << "startIndex = " << startIndex << ", plus size of metadataSize = " << sizeof(metadataSize) << endl;
+    }
+
+    startIndex += sizeof(metadataSize);
+    if (DEBUG_MODE) {
+        cout << "Updated startIndex = " << startIndex << endl;
+    }
+
     // Extract last document IDs, document sizes, and frequency sizes for the block
-    for (int i = 0; i < metadata_size; i++) {
-        uint32_t lastdocID;
-        memcpy(&lastdocID, ret + startIndex, sizeof(lastdocID));
-        lastdocID_list.push_back(lastdocID);
-        startIndex += sizeof(lastdocID);
+    for (int i = 0; i < metadataSize; i++) {
+        uint32_t lastDocId;
+        memcpy(&lastDocId, ret + startIndex, sizeof(lastDocId));
+        lastDocIdList.push_back(lastDocId);
+        startIndex += sizeof(lastDocId);
+        if (DEBUG_MODE) {
+            cout << "Read lastDocId = " << lastDocId << ", Updated startIndex = " << startIndex << endl;
+        }
     }
-    for (int i = 0; i < metadata_size; i++) {
-        uint32_t docIDsize;
-        memcpy(&docIDsize, ret + startIndex, sizeof(docIDsize));
-        docIDsize_list.push_back(docIDsize);
-        startIndex += sizeof(docIDsize);
+    for (int i = 0; i < metadataSize; i++) {
+        uint32_t docIdSize;
+        memcpy(&docIdSize, ret + startIndex, sizeof(docIdSize));
+        docIdSizeList.push_back(docIdSize);
+        startIndex += sizeof(docIdSize);
+        if (DEBUG_MODE) {
+            cout << "Read docIdSize = " << docIdSize << ", Updated startIndex = " << startIndex << endl;
+        }
     }
-    for (int i = 0; i < metadata_size; i++) {
+    for (int i = 0; i < metadataSize; i++) {
         uint32_t freqSize;
         memcpy(&freqSize, ret + startIndex, sizeof(freqSize));
-        freqSize_list.push_back(freqSize);
+        freqSizeList.push_back(freqSize);
         startIndex += sizeof(freqSize);
+        if (DEBUG_MODE) {
+            cout << "Read freqSize = " << freqSize << ", Updated startIndex = " << startIndex << endl;
+        }
     }
     // Unmap the memory-mapped file and close it
+    if (DEBUG_MODE) {
+        cout << "Unmapping memory and closing file descriptor." << endl;
+    }
     munmap(ret, length + offset - pa_offset);
     close(index_fd);
 }
@@ -227,17 +273,22 @@ void QueryProcessor::queryLoop() {
         }
 
         clock_t query_start = clock();
-        vector<string> word_list = _splitQuery(query);  // Split the query
+        vector<string> queryWordList = _splitQuery(query);  // Split the query
 
-        for(int i=0;i<word_list.size();i++) {
-            cout<<lexicon.lexiconList[word_list[i]].docNum<<endl;
+        if (DEBUG_MODE) {
+            cout << "Size of queryWordList: " << queryWordList.size() << endl;
+        }
+        for(int i=0; DEBUG_MODE and i < queryWordList.size(); i++) {
+            cout << "Item in word_list: " << queryWordList[i] << endl;
+            cout << "Corresponding docNum: " << lexicon.lexiconList[queryWordList[i]].docNum << endl;
+//            cout<<lexicon.lexiconList[queryWordList[i]].docNum<<endl;
         }
 
-        if (!word_list.size()) {
+        if (!queryWordList.size()) {
             cout << "unlegal query" << endl;
             continue;
         }
-        _queryTAAT(word_list, queryMode);  // Perform the query
+        _queryTAAT(queryWordList, queryMode);  // Perform the query
         clock_t query_end = clock();
         clock_t query_time = query_end - query_start;
         cout << "search using " << double(query_time) / 1000000 << "s" << endl;
@@ -379,40 +430,39 @@ void QueryProcessor::_getTopK(vector<double> &score_array, int k) {
 
 
 void QueryProcessor::_decodeBlocks(string term, map<uint32_t, double> &score_hash, bool is_init) {
-    uint32_t beginp = lexicon.lexiconList[term].beginPos;
-    uint32_t endp = lexicon.lexiconList[term].endPos;
+    uint32_t beginPos = lexicon.lexiconList[term].beginPos;
+    uint32_t endPos = lexicon.lexiconList[term].endPos;
     uint32_t block_num = lexicon.lexiconList[term].blockNum;
 
     for (int i = 0; i < block_num; i++) {
-        _decodeBlock(term, beginp, score_hash, is_init);
+        _decodeBlock(term, beginPos, score_hash, is_init);
     }
 }
 
 
 // Decodes a single block of postings for a term and updates the score array
-void QueryProcessor::_decodeBlock(string term, uint32_t &beginp,
-                             map<uint32_t, double> &score_hash, bool is_init)
-{
-    uint32_t metadata_size;  // Number of documents in the block
-    vector<uint32_t> lastdocID_list, docIDsize_list, freqSize_list;
+void QueryProcessor::_decodeBlock(string term, uint32_t &beginPos,
+                             map<uint32_t, double> &score_hash, bool is_init) {
+    uint32_t metadataSize;  // Number of documents in the block
+    vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
     // Retrieve metadata about the block (last document IDs, sizes of docID and frequency data)
-    _openList(beginp, metadata_size, lastdocID_list, docIDsize_list, freqSize_list);
+    _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
 
     // Prepare to decode docID and frequency chunks
     vector<uint32_t> docID64, freq64;
-    uint32_t metabyte = 4 + 3 * (metadata_size)*4;  // Offset for metadata in the block
-    uint32_t docIDp = beginp + metabyte;  // Starting position for docID chunk
-    uint32_t freqp = docIDp + docIDsize_list[0];  // Starting position for frequency chunk
+    uint32_t metabyte = 4 + 3 * (metadataSize)*4;  // Offset for metadata in the block
+    uint32_t docIDp = beginPos + metabyte;  // Starting position for docID chunk
+    uint32_t freqp = docIDp + docIdSizeList[0];  // Starting position for frequency chunk
 
     // Loop through each document in the block and decode its docID and frequency
-    for (int i = 0; i < metadata_size; i++) {
+    for (int i = 0; i < metadataSize; i++) {
         // Decode the chunk of docIDs and frequencies
-        docID64 = _decodeChunk(docIDp, docIDp + docIDsize_list[i]);  // Decode docIDs for the block
-        freq64 = _decodeChunk(freqp, freqp + freqSize_list[i]);  // Decode frequencies for the block
+        docID64 = _decodeChunk(docIDp, docIDp + docIdSizeList[i]);  // Decode docIDs for the block
+        freq64 = _decodeChunk(freqp, freqp + freqSizeList[i]);  // Decode frequencies for the block
         // If not the last document, update pointers for the next docID and frequency chunks
-        if (i != metadata_size - 1) {
-            docIDp += docIDsize_list[i] + freqSize_list[i];  // Move docID pointer to the next block
-            freqp += freqSize_list[i] + docIDsize_list[i + 1];  // Move frequency pointer
+        if (i != metadataSize - 1) {
+            docIDp += docIdSizeList[i] + freqSizeList[i];  // Move docID pointer to the next block
+            freqp += freqSizeList[i] + docIdSizeList[i + 1];  // Move frequency pointer
         }
 
         // init score
@@ -428,7 +478,7 @@ void QueryProcessor::_decodeBlock(string term, uint32_t &beginp,
     }
 
     // Update the starting position for the next block
-    beginp += _getMetaSize(metadata_size, lastdocID_list, docIDsize_list, freqSize_list);
+    beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
 }
 
 

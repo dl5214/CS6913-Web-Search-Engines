@@ -1,4 +1,5 @@
 #include "IndexBuilder.h"
+#include "QueryProcessor.h"
 #include <iomanip>
 using namespace std;
 
@@ -18,7 +19,9 @@ int main() {
 //    }
 
     IndexBuilder index_builder;
-    if (INDEX_FLAG) {
+    QueryProcessor query_processor;
+
+    if (PARSE_INDEX_FLAG) {
         cout << "Building postings and intermediate inverted index. Timing started... " << endl;
         clock_t index_start = clock();
         index_builder.readData(DATA_SOURCE_PATH);
@@ -41,23 +44,27 @@ int main() {
     if (LEXICON_FLAG) {
         cout << "Building Lexicon and Final Compressed Index. Timing started..." << endl;
         clock_t lexicon_build_start = clock();
-//        cout << "Merged index path: " << MERGED_INDEX_PATH << endl;
-//        char realPath[PATH_MAX];
-//        string mergedIndexPath = MERGED_INDEX_PATH;
-//        realpath(mergedIndexPath.c_str(), realPath);
-//        cout << "Absolute path of mergedIndexPath: " << realPath << endl;
         index_builder.lexicon.build(MERGED_INDEX_PATH);  // Pass the final merged index file
         index_builder.writeLexicon();
         clock_t lexicon_build_end = clock();
         double lexicon_build_time = double(lexicon_build_end - lexicon_build_start) / 1000000;
         cout << "Building Lexicon and Final Index DONE." << endl;
         cout << "Time elapsed: " << fixed << setprecision(2) << lexicon_build_time << " Seconds" << endl;
-//        cout << "Writing lexicon structure. Timing started..." << endl;
-//        clock_t lexicon_start = clock();
-//        index_builder.WriteLexicon();
-//        clock_t lexicon_end = clock();
-//        double lexicon_time = double(lexicon_end - lexicon_start) / 1000000;
-//        cout << "Writing lexicon structure DONE." << endl;
-//        cout << "Time elapsed: " << fixed << setprecision(2) << lexicon_time << " Seconds" << endl;
+    }
+
+    if(LOAD_FLAG) {
+        cout << "Loading PageTable and Lexicon Into Main Memory. Timing Started..." << endl;
+        clock_t reload_begin = clock();
+        query_processor.pageTable.load();
+        query_processor.lexicon.load();
+        clock_t reload_end = clock();
+        clock_t reload_time = reload_end - reload_begin;
+        double load_time = double(reload_time)/1000000;
+        cout << "Loading PageTable and Lexicon Done." << endl;
+        cout << "Time elapsed: "<< fixed << setprecision(2) << load_time <<" Seconds"<<endl;
+    }
+
+    if (QUERY_FLAG) {
+        query_processor.queryLoop();
     }
 }

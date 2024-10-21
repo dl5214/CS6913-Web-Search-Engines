@@ -21,7 +21,7 @@ public:
     string getIndexFilePath();
     string getIndexFilePath(uint32_t);
 //    string getFinalIndexFilePath();
-    void insertWord(string,uint32_t,uint32_t);
+    void insertWord(string, uint32_t, uint32_t);
     void clear();
     void writeToFile();
 

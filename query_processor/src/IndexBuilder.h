@@ -49,6 +49,7 @@ public:
     /* Public functions */
     void readData(const char *filepath);  // Read data from the file
     void mergeIndex();  // Perform multi-way merge of index files into one
+    void buildLexicon();
     void writePageTable();  // Write page table to disk
     void writeLexicon();  // Write lexicon to disk
 };
