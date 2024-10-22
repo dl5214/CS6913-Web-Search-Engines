@@ -268,89 +268,6 @@ uint32_t QueryProcessor::_nextGEQ(ListPointer &lp, uint32_t docID) {
 }
 
 
-// Updates the score hash for the given term, checking if the document exists in the current block
-void QueryProcessor::_updateScoreMap(string term, map<uint32_t, double> &docScoreMap) {
-    uint32_t beginPos = lexicon.lexiconList[term].beginPos;  // Starting position of the postings list for the term
-    uint32_t endPos = lexicon.lexiconList[term].endPos;  // End position of the postings list for the term
-    uint32_t block_num = lexicon.lexiconList[term].blockNum;  // Number of blocks for the term
-
-    uint32_t metadataSize;
-    vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
-    // Read metadata for the block
-    _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
-    int index = 0;
-    int docIdPos = 0;
-    vector<uint32_t> docId64, freq64;
-    bool needDecode = true;
-
-    // Iterate through the score hash and postings to find matching document IDs
-    for (auto it = docScoreMap.begin(); beginPos < endPos && it != docScoreMap.end();) {
-        uint32_t nextDocId = (next(it) == docScoreMap.end()) ? MAX_DOC_ID : next(it)->first;
-        uint32_t docId = it->first;
-
-        // Move to the next block if the current block does not contain the document
-        if (lastDocIdList.back() < docId) {
-            beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
-
-            if (beginPos < endPos) {
-                _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
-                index = 0;
-                needDecode = true;
-            } else {
-                break;  // Exit the loop if no more blocks remain
-            }
-            continue;
-        }
-
-        // Find the correct block for the current document ID
-        if (auto prevIndex = index; prevIndex != index) {
-            needDecode = true;
-        }
-
-        // Decode the block if necessary
-        if (needDecode) {
-            uint32_t metabyte = 4 + 3 * metadataSize * sizeof(uint32_t);
-            uint32_t docIdPos = beginPos + metabyte;
-            uint32_t freqPos = docIdPos + docIdSizeList[0];
-
-            for (int i = 0; i < index; ++i) {
-                docIdPos += docIdSizeList[i] + freqSizeList[i];  // Advance to the next chunk
-                freqPos += freqSizeList[i] + docIdSizeList[i + 1];
-            }
-
-            // Decode document IDs and frequencies
-            docId64 = _decodeChunkToIntList(docIdPos, docIdPos + docIdSizeList[index]);
-            freq64 = _decodeChunkToIntList(freqPos, freqPos + freqSizeList[index]);
-
-            // Cumulative document IDs decoding
-            uint32_t prevdocID = 0;
-            for (auto &id: docId64) {
-                prevdocID += id;
-                id = prevdocID;
-            }
-
-            docIdPos = 0;
-            needDecode = false;
-        }
-
-        // Check for the document in the decoded block and update the score hash
-        while (docIdPos < docId64.size()) {
-            if (docId64[docIdPos] == docId) {
-                docScoreMap[docId] += _getBM25(term, docId, freq64[docIdPos]);  // Update score
-                break;
-            }
-            // Stop early if the current document ID exceeds the next document
-            if (docId64[docIdPos] >= nextDocId) {
-                break;
-            }
-            ++docIdPos;
-        }
-
-        ++it;  // Move to the next document ID
-    }
-}
-
-
 // Decodes a chunk of varbyte-encoded data and returns a list of integers
 // This function is used to decode either DocId or Freq chunks from the index file
 vector<uint32_t> QueryProcessor::_decodeChunkToIntList(uint32_t offset, uint32_t endPos) {
@@ -437,18 +354,19 @@ void QueryProcessor::_getMapTopK(map<uint32_t, double> &docScoreMap, int k) {
 
 // Finds the top-K scores from the score array
 void QueryProcessor::_getListTopK(vector<double> &scoreList, int k) {
-    struct QueueDouble {
+//    cout << "Size of Score List: " << scoreList.size() << endl;
+    struct ScoreDocPair {
         double score;
         uint32_t docId;
-        QueueDouble(double s, uint32_t i) : score(s), docId(i) {}
+        ScoreDocPair(double s, uint32_t i) : score(s), docId(i) {}
 
         // Override the comparison operator for the priority queue, to define a minHeap
-        bool operator<(const QueueDouble &rhs) const {
+        bool operator<(const ScoreDocPair &rhs) const {
             return -score < -rhs.score;
         }
     };
 
-    priority_queue<QueueDouble> minHeap;
+    priority_queue<ScoreDocPair> minHeap;
 
     // Maintain a priority queue to track the top-k elements
     for (int i = 0; i < scoreList.size(); i++) {
@@ -471,16 +389,16 @@ void QueryProcessor::_getListTopK(vector<double> &scoreList, int k) {
 
 
 // Decodes a single block of postings for a term and updates the score hash map
-void QueryProcessor::_decodeOneBlockToMap(string term, uint32_t &beginPos, map<uint32_t, double> &docScoreMap) {
+void QueryProcessor::_decodeOneBlockToMap(string minTerm, uint32_t &beginPos, map<uint32_t, double> &docScoreMap) {
     uint32_t metadataSize;  // Number of documents in the block
     vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
-    // Retrieve metadata about the block (last document IDs, sizes of docID and frequency data)
+    // Retrieve metadata (document IDs, sizes, and frequencies for the block)
     _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
 
     // Prepare to decode docID and frequency chunks
     vector<uint32_t> docId64, freq64;
-    uint32_t metabyte = 4 + 3 * (metadataSize)*4;  // Offset for metadata in the block
-    uint32_t docIdPos = beginPos + metabyte;  // Starting position for docID chunk
+    uint32_t metaByte = 4 + 3 * (metadataSize) * 4;  // Offset for metadata in the block
+    uint32_t docIdPos = beginPos + metaByte;  // Starting position for docID chunk
     uint32_t freqPos = docIdPos + docIdSizeList[0];  // Starting position for frequency chunk
 
     // Loop through each document in the block and decode its docID and frequency
@@ -496,25 +414,180 @@ void QueryProcessor::_decodeOneBlockToMap(string term, uint32_t &beginPos, map<u
 
         // init score
         // For each document in this chunk, accumulate the BM25 score using the decoded docID and frequency
-        uint32_t prev_docId = 0;  // Used to reconstruct the original docIDs from deltas
+        uint32_t originDocId = 0;  // Used to reconstruct the original docIDs from deltas
         for (int i = 0; i < docId64.size(); i++) {
-            prev_docId += docId64[i];  // Accumulate docID from delta encoding
-            // Add BM25 score to the array
-            docScoreMap[prev_docId] = _getBM25(term, prev_docId, freq64[i]);
+            originDocId += docId64[i];  // Reconstruct original document IDs from deltas
+            // Insert score for each document
+            docScoreMap[originDocId] = _getBM25(minTerm, originDocId, freq64[i]);
         }
     }
 
-    // Update the starting position for the next block
+    // Move to the next block
     beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
 }
 
-void QueryProcessor::_decodeBlocksToMap(string term, map<uint32_t, double> &docScoreMap) {
-    uint32_t beginPos = lexicon.lexiconList[term].beginPos;
-    uint32_t endPos = lexicon.lexiconList[term].endPos;
-    uint32_t blockNum = lexicon.lexiconList[term].blockNum;
+
+void QueryProcessor::_decodeBlocksToMap(string minTerm, map<uint32_t, double> &docScoreMap) {
+    uint32_t beginPos = lexicon.lexiconList[minTerm].beginPos;
+//    uint32_t endPos = lexicon.lexiconList[minTerm].endPos;
+    uint32_t blockNum = lexicon.lexiconList[minTerm].blockNum;
 
     for (int i = 0; i < blockNum; i++) {
-        _decodeOneBlockToMap(term, beginPos, docScoreMap);
+        _decodeOneBlockToMap(minTerm, beginPos, docScoreMap);
+    }
+}
+
+
+//// Updates the score hash for the given term, checking if the document exists in the current block
+//void QueryProcessor::_updateScoreMap(string term, map<uint32_t, double> &docScoreMap) {
+//    uint32_t beginPos = lexicon.lexiconList[term].beginPos;  // Starting position of the postings list for the term
+//    uint32_t endPos = lexicon.lexiconList[term].endPos;  // End position of the postings list for the term
+////    uint32_t blockNum = lexicon.lexiconList[term].blockNum;  // Number of blocks for the term
+//
+//    uint32_t metadataSize;
+//    vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
+//    // Load metadata for the current block
+//    _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
+//    int docIdPos = 0;
+//    vector<uint32_t> docId64, freq64;
+//    bool decodeRequired = true;
+//
+//    // Iterate through the documents in docScoreMap
+//    for (auto it = docScoreMap.begin(); beginPos < endPos && it != docScoreMap.end();) {
+//        uint32_t nextDocId = (next(it) == docScoreMap.end()) ? MAX_DOC_ID : next(it)->first;
+//        uint32_t docId = it->first;
+//
+//        // Skip blocks that do not contain the current document
+//        if (lastDocIdList.back() < docId) {
+//            beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
+//
+//            if (beginPos < endPos) {
+//                _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
+//                decodeRequired = true;
+//            } else {
+//                break;  // Exit the loop if no more blocks remain
+//            }
+//            continue;
+//        }
+//
+//        // Decode the block if necessary
+//        if (decodeRequired) {
+//            uint32_t metabyte = 4 + 3 * metadataSize * sizeof(uint32_t);  // Calculate metadata offset
+//            uint32_t docIdPos = beginPos + metabyte;
+//            uint32_t freqPos = docIdPos + docIdSizeList[0];
+//
+//            // Decode document IDs and frequencies
+//            docId64 = _decodeChunkToIntList(docIdPos, docIdPos + docIdSizeList[0]);
+//            freq64 = _decodeChunkToIntList(freqPos, freqPos + freqSizeList[0]);
+//
+//            // Document IDs delta decoding
+//            uint32_t originDocId = 0;
+//            for (auto &id: docId64) {
+//                originDocId += id;  // Reconstruct the original document ID
+//                id = originDocId;  // Modify the docId64 element
+//            }
+//
+//            docIdPos = 0;
+//            decodeRequired = false;
+//        }
+//
+//        // Check for the document in the decoded block and update the score hash
+//        while (docIdPos < docId64.size()) {
+//            if (docId64[docIdPos] == docId) {
+//                docScoreMap[docId] += _getBM25(term, docId, freq64[docIdPos]);  // Update score
+//                break;
+//            }
+//            // Stop early if the current document ID exceeds the next document
+//            if (docId64[docIdPos] >= nextDocId) {
+//                break;
+//            }
+//            ++docIdPos;
+//        }
+//
+//        ++it;  // Move to the next document ID
+//    }
+//}
+// Updates the score hash for the given term, ensuring only documents common to all terms remain
+// Updates the score hash for the given term, ensuring only documents common to all terms remain
+// Updates the score hash for the given term, ensuring only documents common to all terms remain
+void QueryProcessor::_updateScoreMap(string term, map<uint32_t, double> &docScoreMap) {
+    uint32_t beginPos = lexicon.lexiconList[term].beginPos;  // Starting position of the postings list for the term
+    uint32_t endPos = lexicon.lexiconList[term].endPos;      // End position of the postings list for the term
+
+    uint32_t metadataSize;
+    vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
+    _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);  // Load metadata for the current block
+
+    vector<uint32_t> docId64, freq64;
+    bool decodeRequired = true;
+    int docIdPos = 0;  // Initialize docIdPos here, outside the decode block
+
+    // Iterate through the documents in docScoreMap
+    auto it = docScoreMap.begin();
+    while (beginPos < endPos && it != docScoreMap.end()) {
+        uint32_t nextDocId = (next(it) == docScoreMap.end()) ? MAX_DOC_ID : next(it)->first;
+        uint32_t docId = it->first;
+
+        // Skip blocks that do not contain the current document
+        if (lastDocIdList.back() < docId) {
+            beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
+            if (beginPos < endPos) {
+                _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
+                decodeRequired = true;
+            } else {
+                break;  // Exit the loop if no more blocks remain
+            }
+            continue;
+        }
+
+        // Decode the block if necessary
+        if (decodeRequired) {
+            uint32_t metabyte = 4 + 3 * metadataSize * sizeof(uint32_t);  // Calculate metadata offset
+            uint32_t docIdPosStart = beginPos + metabyte;  // Start position of docIDs
+            uint32_t freqPosStart = docIdPosStart + docIdSizeList[0];  // Start position of frequencies
+
+            // Decode document IDs and frequencies
+            docId64 = _decodeChunkToIntList(docIdPosStart, docIdPosStart + docIdSizeList[0]);
+            freq64 = _decodeChunkToIntList(freqPosStart, freqPosStart + freqSizeList[0]);
+
+            // Document IDs delta decoding
+            uint32_t originDocId = 0;
+            for (auto &id : docId64) {
+                originDocId += id;  // Reconstruct the original document ID
+                id = originDocId;   // Modify the docId64 element
+            }
+
+            docIdPos = 0;  // Reset docIdPos to 0 for the new block
+            decodeRequired = false;
+        }
+
+        // Check if the document is found in the current term
+        bool found = false;
+        while (docIdPos < docId64.size()) {
+            if (docId64[docIdPos] == docId) {
+                // Document found, update its score and continue
+                docScoreMap[docId] += _getBM25(term, docId, freq64[docIdPos]);
+                found = true;
+                break;
+            }
+            // Stop early if the current document ID exceeds the next document in the map
+            if (docId64[docIdPos] >= nextDocId) {
+                break;
+            }
+            ++docIdPos;
+        }
+
+        if (!found) {
+            // If the document is not found in the current term, remove it from the map
+            it = docScoreMap.erase(it);
+        } else {
+            ++it;  // Move to the next document in the map
+        }
+    }
+
+    // Remove any remaining documents from docScoreMap that weren't matched
+    while (it != docScoreMap.end()) {
+        it = docScoreMap.erase(it);
     }
 }
 
@@ -541,10 +614,10 @@ void QueryProcessor::_decodeOneBlockToList(string term, uint32_t &beginPos, vect
         }
 
         // Increment document IDs and update scores using BM25
-        uint32_t prevDocId = 0;
+        uint32_t originDocId = 0;
         for (int i = 0; i < docId64.size(); i++) {
-            prevDocId += docId64[i];
-            scoreList[prevDocId] += _getBM25(term, prevDocId, freq64[i]);
+            originDocId += docId64[i];  // Reconstruct DocID for delta encoding
+            scoreList[originDocId] += _getBM25(term, originDocId, freq64[i]);
         }
     }
 
@@ -569,7 +642,7 @@ void QueryProcessor::_queryTAAT(vector<string> wordList, int queryMode) {
     _searchResultList.clear();  // Clear previous search results
 
     if (queryMode == DISJUNCTIVE) {  // OR query
-        vector<double> scoreList(pageTable.totalDoc, 0);  // Array to hold BM25 scores
+        vector<double> scoreList(pageTable.totalDoc, 0);  // Array to hold BM25 scores, same size as pageTable
         // Iterate through each term and calculate its score
         for (auto queryTerm : wordList) {
             try {
@@ -583,7 +656,7 @@ void QueryProcessor::_queryTAAT(vector<string> wordList, int queryMode) {
         _getListTopK(scoreList, NUM_TOP_RESULT);
     }
     else if (queryMode == CONJUNCTIVE) {  // AND query
-        // find minTerm
+        // find the query term with least docNum
         string minTerm = wordList[0];  // Initialize with the first term
         uint32_t minDocNum = lexicon.lexiconList[minTerm].docNum;  // Number of documents containing the term
         // Find the term with the smallest number of documents
@@ -594,6 +667,7 @@ void QueryProcessor::_queryTAAT(vector<string> wordList, int queryMode) {
                 minDocNum = lexicon.lexiconList[term].docNum;
             }
         }
+//        cout << "Term with least docNum: " << minTerm << endl;
 
         // Build the initial score hash map based on the smallest term
         map<uint32_t, double> docScoreMap;
@@ -748,13 +822,6 @@ void QueryProcessor::queryLoop() {
         clock_t query_end = clock();
         clock_t query_time = query_end - query_start;
         cout << "search using " << double(query_time) / 1000000 << "s" << endl;
-
-//        // Find and update snippets for each result
-//        clock_t snippet_begin = clock();
-//        _updateSnippets(word_list, vector<uint32_t>());
-//        clock_t snippet_end = clock();
-//        clock_t snippet_time = snippet_end - snippet_begin;
-//        cout << "find snippets using " << double(snippet_time) / 1000000 << "s" << endl;
 
         _searchResultList.printToConsole();
     }

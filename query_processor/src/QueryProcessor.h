@@ -50,11 +50,15 @@ private:
     void _getMapTopK(map<uint32_t, double>& scoreMap, int K); // Find top K scores in a hash map
 
     vector<uint32_t> _decodeChunkToIntList(uint32_t chunkSize, uint32_t blockSize); // Decode chunks of data, either DocId or Freq
-    void _updateScoreMap(string term, map<uint32_t, double>& scoreMap); // Update scores using a hash map
-    void _decodeOneBlockToMap(string block, uint32_t& docID, map<uint32_t, double>& scores); // Decode block to map
-    void _decodeBlocksToMap(string block, map<uint32_t, double>& decodedMap); // Decode blocks to hash map
+
+    // DISJUNCTIVE
     void _decodeOneBlockToList(string block, uint32_t& docID, vector<double>& scores); // Decode a single block
     void _decodeBlocksToList(string block, vector<double>& decodedScores); // Decode blocks for compressed scores
+
+    // CONJUNCTIVE
+    void _decodeOneBlockToMap(string block, uint32_t& docID, map<uint32_t, double>& scores); // Decode block to map
+    void _decodeBlocksToMap(string block, map<uint32_t, double>& decodedMap); // Decode blocks to hash map
+    void _updateScoreMap(string term, map<uint32_t, double>& scoreMap); // Update scores using a hash map
 
     void _queryTAAT(vector<string> word_list, int queryMode);  // Term-at-a-time query
     void _queryDAAT(vector<string> word_list, int queryMode);  // Document-at-a-time query
