@@ -18,16 +18,21 @@
 #include <unistd.h>    // For close, sysconf
 #include <sys/types.h> // For types used by mmap (off_t)
 #include <sys/stat.h>  // For file status (e.g., used with open)
+#include <numeric>  // For iota and accumulate
 using namespace std;
 
 
-// ListPointer structure for DAAT query processing
-struct ListPointer {
-    vector<uint32_t> docIDs;  // List of document IDs for this term
-    vector<uint32_t> freqs;   // Corresponding term frequencies in each document
-    size_t index = 0;         // Current position in the posting list
-    size_t listSize = 0;      // Size of the posting list
-    bool isOpen = false;      // Indicates if the list is currently open
+// Score DocID Pair, with comparator on Score, to create a minHeap and maintain top K BM25 score
+struct DocScoreEntry {
+    double score;
+    uint32_t docId;
+
+    DocScoreEntry(double s, uint32_t i) : score(s), docId(i) {}
+
+    // Override: Comparator for priority queue (minHeap)
+    bool operator<(const DocScoreEntry &rhs) const {
+        return -score < -rhs.score;
+    }
 };
 
 
@@ -36,13 +41,11 @@ private:
     SearchResultList _searchResultList;
 
     double _getBM25(string term, uint32_t docID, uint32_t freq); // BM25 scoring function
-    vector<pair<uint32_t, uint32_t>> _getPostingsList(const string &term);
+    vector<pair<uint32_t, uint32_t>> _getPostingsList(string term);
     uint32_t _getFreq(string term, uint32_t docID); // Get term frequency for a specific document
-    uint32_t _nextGEQ(ListPointer &lp, uint32_t docID);
-    ListPointer _openList(string term);  // for DAAT use
-    void _closeList(ListPointer &lp);
+
     void _openList(uint32_t termID, uint32_t& df, vector<uint32_t>& docIDs, vector<uint32_t>& freqs, vector<uint32_t>& positions);
-    vector<string> _splitQuery(string query); // Split the query into terms
+    vector<string> _splitQuery(const string& query); // Split the query into terms
 
     uint32_t _getMetaSize(uint32_t termID, vector<uint32_t>& docIDs, vector<uint32_t>& freqs, vector<uint32_t>& positions); // Calculate metadata size for a term
 
@@ -51,17 +54,28 @@ private:
 
     vector<uint32_t> _decodeChunkToIntList(uint32_t chunkSize, uint32_t blockSize); // Decode chunks of data, either DocId or Freq
 
-    // DISJUNCTIVE
-    void _decodeOneBlockToList(string block, uint32_t& docID, vector<double>& scores); // Decode a single block
-    void _decodeBlocksToList(string block, vector<double>& decodedScores); // Decode blocks for compressed scores
+    void _decodeOneBlock(string term, uint32_t& beginPos, vector<uint32_t>& docIdList, vector<uint32_t>& freqList); // Decode a single block
+    void _decodeBlocks(string term, vector<uint32_t>& docIdList, vector<uint32_t>& freqList); // Decode blocks
 
-    // CONJUNCTIVE
-    void _decodeOneBlockToMap(string block, uint32_t& docID, map<uint32_t, double>& scores); // Decode block to map
-    void _decodeBlocksToMap(string block, map<uint32_t, double>& decodedMap); // Decode blocks to hash map
+    // TAAT DISJUNCTIVE
+    void _decodeOneBlockToList(string term, uint32_t& beginPos, vector<double>& scoreList); // Decode a single block
+    void _decodeBlocksToList(string term, vector<double>& scoreList); // Decode blocks for compressed scores
+
+    // TAAT CONJUNCTIVE
+    void _decodeOneBlockToMap(string term, uint32_t& beginPos, map<uint32_t, double>& scoreMap); // Decode block to map
+    void _decodeBlocksToMap(string term, map<uint32_t, double>& scoreMap); // Decode blocks to hash map
     void _updateScoreMap(string term, map<uint32_t, double>& scoreMap); // Update scores using a hash map
 
     void _queryTAAT(vector<string> word_list, int queryMode);  // Term-at-a-time query
     void _queryDAAT(vector<string> word_list, int queryMode);  // Document-at-a-time query
+
+    uint32_t _nextGEQ(const vector<uint32_t>& docIDList, uint32_t currentDocID);
+    // Helper function for DAAT Disjunctive (OR) query processing using Top-K MaxScore Algorithm
+    void _maxScoreTopK(const vector<string>& wordList, const vector<vector<uint32_t>>& docIDLists, const vector<vector<uint32_t>>& freqLists);
+
+    // Helper functions for MaxScore Algorithm
+    void _outputTopKResults(priority_queue<DocScoreEntry>& topKHeap);  // Output top-k results
+
 
 public:
     PageTable pageTable;  // Reference to document table

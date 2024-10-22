@@ -23,8 +23,6 @@ public:
 class SearchResultList {
 private:
     bool _isInList(string, vector<string> &);
-//    // final project
-//    vector<string> _splitLine(string);
     int snippet_no = 400;
 
 
@@ -35,10 +33,7 @@ public:
     void clear();
     void printToConsole();
     void printToServer(ostream &out = cout);  // overload, for front-end
-    string extractSnippets(string, string, string, vector<string>, vector<uint32_t>);
 
-//    // final project
-//    void readFake(string, vector<string> &, vector<uint32_t> &);
 };
 
 #endif //SEARCHSYSTEM_SEARCHRESULT_H

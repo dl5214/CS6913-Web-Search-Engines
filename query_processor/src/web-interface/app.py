@@ -46,6 +46,7 @@ def search():
     if query and query_mode:
         # Send query and mode to C++ server and get the result
         result = query_cpp_server(f"{query}|{query_mode}")  # Pass both query and mode
+        print(result)
         return render_template('result.html', query=query, query_mode=mode_text, result=result)
     else:
         return render_template('search.html', error="Please enter a query and select a mode")

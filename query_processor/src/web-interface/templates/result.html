@@ -23,15 +23,30 @@
                         <th>BM25 Score</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for line in result.splitlines() %}
-                    {% set doc_id, score = line.split(', ') %}
-                    <tr>
-                        <td>{{ doc_id.split(': ')[1] }}</td>
-                        <td>{{ score.split(': ')[1] }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
+                    <tbody>
+                        {% for line in result.splitlines() %}
+                            {% if ': ' in line %}
+                                {% set doc_id, score = line.split(', ') %}
+                                <tr>
+                                    <td>{{ doc_id.split(': ')[1] }}</td>
+                                    <td>{{ score.split(': ')[1] }}</td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="2">Invalid line: {{ line }}</td>
+                                </tr>
+                            {% endif %}
+                        {% endfor %}
+                    </tbody>
+<!--                <tbody>-->
+<!--                    {% for line in result.splitlines() %}-->
+<!--                    {% set doc_id, score = line.split(', ') %}-->
+<!--                    <tr>-->
+<!--                        <td>{{ doc_id.split(': ')[1] }}</td>-->
+<!--                        <td>{{ score.split(': ')[1] }}</td>-->
+<!--                    </tr>-->
+<!--                    {% endfor %}-->
+<!--                </tbody>-->
             </table>
         </div>
 
