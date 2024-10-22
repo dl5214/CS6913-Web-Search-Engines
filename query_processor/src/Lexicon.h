@@ -34,7 +34,6 @@ public:
     Lexicon();
     ~Lexicon();
     bool insert(string, uint32_t, uint32_t, uint32_t, uint32_t);
-//    void Build(string, string);
     void build(const string& mergedIndexPath);
     void write();
     void load();
