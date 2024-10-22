@@ -39,7 +39,7 @@ using namespace std;
 #define DISJUNCTIVE 1
 #define DAAT_FLAG 1  // 0: TAAT, 1: DAAT
 
-#define NUM_TOP_RESULT 20
+#define NUM_TOP_RESULT 15
 
 #define DEBUG_MODE 1
 #define PARSE_INDEX_FLAG 0  // whether to build intermediate index

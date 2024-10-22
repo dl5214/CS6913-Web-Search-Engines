@@ -218,10 +218,6 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
             // Write encoded docIDs for each block
             for (int j = i * POSTINGS_PER_BLOCK; j < (i + 1) * POSTINGS_PER_BLOCK && j < docIdList.size(); j++) {
                 vector<uint8_t> enDocId = docIdList[j];
-//                for (int k = 0; k < endocID.size(); k++) {
-//                    // Write each byte
-//                    outfile.write(reinterpret_cast<const char *>(&endocID[k]), sizeof(uint8_t));
-//                }
                 for (unsigned char & k : enDocId) {  // Write each byte
                     outfile.write(reinterpret_cast<const char *>(&k), sizeof(uint8_t));
                 }
@@ -232,18 +228,8 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
                 for (unsigned char & k : enFreq) {  // Write each byte
                     outfile.write(reinterpret_cast<const char *>(&k), sizeof(uint8_t));
                 }
-//                for (int k = 0; k < enFreq.size(); k++) {
-//                    // Write each byte
-//                    outfile.write(reinterpret_cast<const char *>(&enFreq[k]), sizeof(uint8_t));
-//                }
             }
         }
-        // file left blocks in 0
-        // uint8_t zero = 0;
-        // for (int i = 0; i < BLOCK_SIZE - nowbyte; i++)
-        // {
-        //     outfile.write(reinterpret_cast<const char *>(&zero), sizeof(uint8_t));
-        // }
     }
 
     return totalBlocks;  // Return the total number of blocks written
@@ -261,24 +247,6 @@ void Lexicon::build(const string& mergedIndexPath) {
     uint32_t endPos;  // Variables to track the positions of the postings in the index file
     string line;
 
-//    if (DEBUG_MODE) {
-//        cout << "indexPath: " << _indexPath << endl;
-//        // Check if the input file opened correctly
-//        if (!infile.is_open()) {
-//            cerr << "Error: Failed to open merged index file: " << mergedIndexPath << endl;
-//            return;
-//        } else {
-//            cout << "Merged index file opened successfully." << endl;
-//        }
-//
-//        // Check if the output file opened correctly
-//        if (!outfile.is_open()) {
-//            cerr << "Error: Failed to open final index file: " << indexPath << endl;
-//            return;
-//        } else {
-//            cout << "Final index file opened successfully." << endl;
-//        }
-//    }
 
     // Read the merged index file line by line
     while (!infile.eof()) {

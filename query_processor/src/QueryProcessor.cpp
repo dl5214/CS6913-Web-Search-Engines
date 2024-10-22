@@ -337,83 +337,41 @@ void QueryProcessor::_decodeBlocksToMap(string minTerm, map<uint32_t, double> &d
 
 // Updates the score hash for the given term, ensuring only documents common to all terms remain
 void QueryProcessor::_updateScoreMap(string term, map<uint32_t, double> &docScoreMap) {
-    uint32_t beginPos = lexicon.lexiconList[term].beginPos;  // Starting position of the postings list for the term
-    uint32_t endPos = lexicon.lexiconList[term].endPos;      // End position of the postings list for the term
+    vector<uint32_t> docIdList, freqList;
 
-    uint32_t metadataSize;
-    vector<uint32_t> lastDocIdList, docIdSizeList, freqSizeList;
-    _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);  // Load metadata for the current block
-
-    vector<uint32_t> docId64, freq64;
-    bool decodeRequired = true;
-    int docIdPos = 0;  // Initialize docIdPos here, outside the decode block
+    // Decode all blocks for the given term
+    _decodeBlocks(term, docIdList, freqList);
 
     // Iterate through the documents in docScoreMap
     auto it = docScoreMap.begin();
-    while (beginPos < endPos && it != docScoreMap.end()) {
-        uint32_t nextDocId = (next(it) == docScoreMap.end()) ? MAX_DOC_ID : next(it)->first;
+    size_t docIdPos = 0;
+
+    // For each document in the map, check if it's in the decoded list
+    while (it != docScoreMap.end()) {
         uint32_t docId = it->first;
-
-        // Skip blocks that do not contain the current document
-        if (lastDocIdList.back() < docId) {
-            beginPos += _getMetaSize(metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
-            if (beginPos < endPos) {
-                _openList(beginPos, metadataSize, lastDocIdList, docIdSizeList, freqSizeList);
-                decodeRequired = true;
-            } else {
-                break;  // Exit the loop if no more blocks remain
-            }
-            continue;
-        }
-
-        // Decode the block if necessary
-        if (decodeRequired) {
-            uint32_t metabyte = 4 + 3 * metadataSize * sizeof(uint32_t);  // Calculate metadata offset
-            uint32_t docIdPosStart = beginPos + metabyte;  // Start position of docIDs
-            uint32_t freqPosStart = docIdPosStart + docIdSizeList[0];  // Start position of frequencies
-
-            // Decode document IDs and frequencies
-            docId64 = _decodeChunkToIntList(docIdPosStart, docIdPosStart + docIdSizeList[0]);
-            freq64 = _decodeChunkToIntList(freqPosStart, freqPosStart + freqSizeList[0]);
-
-            // Document IDs delta decoding
-            uint32_t originDocId = 0;
-            for (auto &id : docId64) {
-                originDocId += id;  // Reconstruct the original document ID
-                id = originDocId;   // Modify the docId64 element
-            }
-
-            docIdPos = 0;  // Reset docIdPos to 0 for the new block
-            decodeRequired = false;
-        }
-
-        // Check if the document is found in the current term
         bool found = false;
-        while (docIdPos < docId64.size()) {
-            if (docId64[docIdPos] == docId) {
-                // Document found, update its score and continue
-                docScoreMap[docId] += _getBM25(term, docId, freq64[docIdPos]);
+
+        // Move through the decoded docIdList until we find or pass the current docId
+        while (docIdPos < docIdList.size()) {
+            if (docIdList[docIdPos] == docId) {
+                // Document found, update the score
+                docScoreMap[docId] += _getBM25(term, docId, freqList[docIdPos]);
                 found = true;
+                ++docIdPos;  // Move to the next document in the list
                 break;
-            }
-            // Stop early if the current document ID exceeds the next document in the map
-            if (docId64[docIdPos] >= nextDocId) {
+            } else if (docIdList[docIdPos] > docId) {
+                // Stop early since the current docID in docIdList is greater than the one in docScoreMap
                 break;
             }
             ++docIdPos;
         }
 
+        // If not found, remove it from the map
         if (!found) {
-            // If the document is not found in the current term, remove it from the map
             it = docScoreMap.erase(it);
         } else {
             ++it;  // Move to the next document in the map
         }
-    }
-
-    // Remove any remaining documents from docScoreMap that weren't matched
-    while (it != docScoreMap.end()) {
-        it = docScoreMap.erase(it);
     }
 }
 
@@ -493,7 +451,6 @@ void QueryProcessor::_queryTAAT(vector<string> wordList, int queryMode) {
                 minDocNum = lexicon.lexiconList[term].docNum;
             }
         }
-//        cout << "Term with least docNum: " << minTerm << endl;
 
         // Build the initial score hash map based on the smallest term
         map<uint32_t, double> docScoreMap;
@@ -507,7 +464,7 @@ void QueryProcessor::_queryTAAT(vector<string> wordList, int queryMode) {
                 _updateScoreMap(queryTerm, docScoreMap);
             }
             catch (...) {
-                cerr << "exception" << endl;
+                cerr << "exception occurred while updating score map for term: " << queryTerm << endl;
             }
         }
 
@@ -563,14 +520,15 @@ void QueryProcessor::_decodeBlocks(string term, vector<uint32_t>& docIdList, vec
 }
 
 
+// binary search
 uint32_t QueryProcessor::_nextGEQ(const vector<uint32_t>& docIDList, uint32_t currentDocID) {
-    // Traverse the docID list and return the first docID >= currentDocID
-    for (uint32_t docID : docIDList) {
-        if (docID >= currentDocID) {
-            return docID;  // Return the next document that meets the condition
-        }
+    // Use binary search to find the first docID >= currentDocID
+    auto it = lower_bound(docIDList.begin(), docIDList.end(), currentDocID);
+
+    if (it != docIDList.end()) {
+        return *it;  // Return the document ID found
     }
-    return MAX_DOC_ID;  // If no docID is >= currentDocID, return a sentinel value
+    return MAX_DOC_ID;  // If no docID >= currentDocID, return the sentinel value
 }
 
 
@@ -716,12 +674,8 @@ void QueryProcessor::_outputTopKResults(priority_queue<DocScoreEntry>& topKHeap)
         topKHeap.pop();
     }
 
-    // Reverse the results to get them in descending score order
-    reverse(topKResults.begin(), topKResults.end());
-
     // Output the results
     for (const auto& [docId, score] : topKResults) {
-//        cout << "DocID: " << docId << " Score: " << score << endl;
         _searchResultList.insert(docId, score);
     }
 
