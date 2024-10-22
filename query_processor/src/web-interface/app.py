@@ -7,7 +7,6 @@ app = Flask(__name__)
 SERVER_HOST = '127.0.0.1'  # Use the correct IP address of your C++ server
 SERVER_PORT = 9001        # Port number where your C++ server is running
 
-
 # Function to send query to C++ server and receive the result
 def query_cpp_server(query):
     try:
@@ -18,7 +17,6 @@ def query_cpp_server(query):
 
             # Receive response from C++ server
             result = s.recv(1024).decode('utf-8')  # Adjust buffer size if needed
-            # return result
             # Reverse the result lines before returning them
             result_lines = result.strip().splitlines()
             reversed_result = '\n'.join(result_lines[::-1])
@@ -26,12 +24,10 @@ def query_cpp_server(query):
     except Exception as e:
         return f"Error: {str(e)}"
 
-
 # Route for the search page
 @app.route('/')
 def index():
     return render_template('search.html')  # Renders an HTML page with a search box
-
 
 # Route to handle form submission and display query results
 @app.route('/search', methods=['POST'])
@@ -39,13 +35,20 @@ def search():
     query = request.form.get('query')  # Get query from form submission
     query_mode = request.form.get('query_mode')  # Get query mode (CONJUNCTIVE or DISJUNCTIVE)
 
+    # Translate query_mode to a readable form
+    if query_mode == '0':
+        mode_text = "Conjunctive (AND)"
+    elif query_mode == '1':
+        mode_text = "Disjunctive (OR)"
+    else:
+        mode_text = "Unknown"
+
     if query and query_mode:
         # Send query and mode to C++ server and get the result
         result = query_cpp_server(f"{query}|{query_mode}")  # Pass both query and mode
-        return render_template('result.html', query=query, result=result)
+        return render_template('result.html', query=query, query_mode=mode_text, result=result)
     else:
         return render_template('search.html', error="Please enter a query and select a mode")
-
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

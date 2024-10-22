@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <string>
 #include <boost/asio.hpp>
-//#include <pybind11/pybind11.h>
 
 using namespace std;
 using boost::asio::ip::tcp;
@@ -56,7 +55,7 @@ void startServer(short port) {
         tcp::socket socket(io_context);
         acceptor.accept(socket);  // Accept client connection
 
-        std::cout << "Client connected." << std::endl;
+        cout << "Client connected." << endl;
         handleRequest(socket);  // Process client query
     }
 }
@@ -139,22 +138,16 @@ int main() {
 //    }
 
     // Check if we should start the server
-    if (START_SERVER_FLAG) {
-        std::cout << "Starting server on port 9001..." << std::endl;
+    if (FRONTEND_FLAG) {
+        cout << "Frontend mode: please use web server on port 9001..." << endl;
         startServer(9001);  // Run the server on port 12345
     }
 
     // If server is not started, run query loop
-    if (!START_SERVER_FLAG && QUERY_FLAG) {
-        std::cout << "Starting query loop in normal mode..." << std::endl;
+    if (!FRONTEND_FLAG && QUERY_FLAG) {
+        cout << "Console mode: please use query loop in console..." << endl;
         query_processor.queryLoop();  // Run the query loop for standard input
     }
 
     return 0;
 }
-
-//// PYBIND11 Module to expose C++ functions to Python
-//PYBIND11_MODULE(query_processor_interface, m) {
-//    m.def("load", &load, "Load PageTable and Lexicon into memory");
-//    m.def("queryLoop", &queryLoop, "Run the query loop for interactive querying");
-//}

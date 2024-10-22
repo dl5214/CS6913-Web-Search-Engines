@@ -42,20 +42,22 @@ private:
     ListPointer _openList(string term);  // for DAAT use
     void _closeList(ListPointer &lp);
     void _openList(uint32_t termID, uint32_t& df, vector<uint32_t>& docIDs, vector<uint32_t>& freqs, vector<uint32_t>& positions);
+    vector<string> _splitQuery(string query); // Split the query into terms
+
+    uint32_t _getMetaSize(uint32_t termID, vector<uint32_t>& docIDs, vector<uint32_t>& freqs, vector<uint32_t>& positions); // Calculate metadata size for a term
+
+    void _getListTopK(vector<double>& scoreList, int K); // Find top K scores
+    void _getMapTopK(map<uint32_t, double>& scoreMap, int K); // Find top K scores in a hash map
+
+    vector<uint32_t> _decodeChunkToIntList(uint32_t chunkSize, uint32_t blockSize); // Decode chunks of data, either DocId or Freq
+    void _updateScoreMap(string term, map<uint32_t, double>& scoreMap); // Update scores using a hash map
+    void _decodeOneBlockToMap(string block, uint32_t& docID, map<uint32_t, double>& scores); // Decode block to map
+    void _decodeBlocksToMap(string block, map<uint32_t, double>& decodedMap); // Decode blocks to hash map
+    void _decodeOneBlockToList(string block, uint32_t& docID, vector<double>& scores); // Decode a single block
+    void _decodeBlocksToList(string block, vector<double>& decodedScores); // Decode blocks for compressed scores
+
     void _queryTAAT(vector<string> word_list, int queryMode);  // Term-at-a-time query
     void _queryDAAT(vector<string> word_list, int queryMode);  // Document-at-a-time query
-    vector<string> _splitQuery(string query); // Split the query into terms
-    void _decodeBlocks(string block, vector<double>& decodedScores); // Decode blocks for compressed scores
-    void _decodeBlock(string block, uint32_t& docID, vector<double>& scores); // Decode a single block
-    vector<uint32_t> _decodeChunk(uint32_t chunkSize, uint32_t blockSize); // Decode chunks of data
-    void _getTopK(vector<double>& scores, int K); // Find top K scores
-    void _updateScoreHash(string term, map<uint32_t, double>& scoreMap, bool flag); // Update scores using a hash map
-    void _decodeBlocks(string block, map<uint32_t, double>& decodedMap, bool flag); // Decode blocks to hash map
-    void _decodeBlock(string block, uint32_t& docID, map<uint32_t, double>& scores, bool flag); // Decode block to map
-    void _getTopK(map<uint32_t, double>& scoreMap, int K); // Find top K scores in a hash map
-    uint32_t _getMetaSize(uint32_t termID, vector<uint32_t>& docIDs, vector<uint32_t>& freqs, vector<uint32_t>& positions); // Calculate metadata size for a term
-//    void _updateSnippets(vector<string> snippets, vector<uint32_t> docIDs); // Update snippets in results
-//    string _findSnippets(uint32_t docID, vector<string> terms, vector<uint32_t> positions); // Extract snippets
 
 public:
     PageTable pageTable;  // Reference to document table
@@ -68,7 +70,6 @@ public:
     void queryLoop();  // Main loop for processing queries
     void testQuery();  // Function to test queries
     string processQuery(const string &query, int queryMode);
-//    void testSnippets(string query);  // Function to test snippet generation
 };
 
 #endif //SEARCHSYSTEM_QUERYPROCESSOR_H
