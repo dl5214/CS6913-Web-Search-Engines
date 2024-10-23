@@ -16,8 +16,7 @@ void PageTable::_getAvgDataLen() {
 
 void Document::print() const {
     cout << "docId:" << docId << " dataLength:" << dataLength
-//    << " docNO:" << docNO << " url:" << url
-    << " wordCount:" << wordCount << endl;
+    << " wordCount:" << wordCount << " docPosition: "<< docPos << endl;
 }
 
 
@@ -59,8 +58,7 @@ void PageTable::write() {
 
     for (const auto& doc : pageTable) {
         outfile << doc.docId << " " << doc.dataLength << " " << doc.wordCount << " "
-//               << " " << doc.docNO << doc.url << " "
-                << endl;
+        << doc.docPos << " " << endl;
     }
 
     outfile.close();
@@ -97,16 +95,7 @@ void PageTable::load() {
 
     while(!infile.eof()) {
         Document newDoc;
-//        if (DEBUG_MODE and newDoc.docId % 100000 == 0) {
-//            cout << newDoc.docId << " "
-////            <<  newDoc.docNo << " "
-//            << newDoc.dataLength << " " << newDoc.wordCount << endl;
-//        }
-        infile >> newDoc.docId
-//        >> newDoc.docNo
-        >> newDoc.dataLength >> newDoc.wordCount;
-//        >> newdoc.gzp;
-//        >>newdoc.url>>newdoc.gzp;
+        infile >> newDoc.docId >> newDoc.dataLength >> newDoc.wordCount >> newDoc.docPos;
         pageTable.push_back(newDoc);
     }
     totalDoc = pageTable.size();

@@ -43,6 +43,7 @@ private:
     double _getBM25(string term, uint32_t docID, uint32_t freq); // BM25 scoring function
     vector<pair<uint32_t, uint32_t>> _getPostingsList(string term);
     uint32_t _getFreq(string term, uint32_t docID); // Get term frequency for a specific document
+    string readDocContent(uint32_t docId);  // read the doc Content by docId
 
     void _openList(uint32_t termID, uint32_t& df, vector<uint32_t>& docIDs, vector<uint32_t>& freqs, vector<uint32_t>& positions);
     vector<string> _splitQuery(const string& query); // Split the query into terms

@@ -140,7 +140,7 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
             prevDocId = docId;  // Update previous docID
 
             // Store metadata for each block if it's full or we are at the end of the postings
-            if (docIdList.size() % POSTINGS_PER_BLOCK == 0 || isDone) {
+            if (docIdList.size() % POSTINGS_PER_CHUNK == 0 || isDone) {
                 lastDocIdMetadata.push_back(docId);  // Store last docID of this block
                 prevDocId = 0;  // Reset for the next block
             }
@@ -163,7 +163,7 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
         freqSize += freqList[i].size();  // Sum size of encoded frequencies
 
         // If block is full, store the block sizes
-        if ((i + 1) % POSTINGS_PER_BLOCK == 0 || i == docIdList.size() - 1) {
+        if ((i + 1) % POSTINGS_PER_CHUNK == 0 || i == docIdList.size() - 1) {
             docIdBlockSizeMetadata.push_back(docIdSize);  // Store docID block size
             freqBlockSizeMetadata.push_back(freqSize);  // Store frequency block size
             docIdSize = 0;
@@ -216,14 +216,14 @@ uint32_t Lexicon::_writeBlocks(string term, uint32_t &docNum, string arr, ofstre
         // Write the actual postings (docID and frequency pairs)
         for (int i = startBlockIdx; i < currBlockIdx; i++) {
             // Write encoded docIDs for each block
-            for (int j = i * POSTINGS_PER_BLOCK; j < (i + 1) * POSTINGS_PER_BLOCK && j < docIdList.size(); j++) {
+            for (int j = i * POSTINGS_PER_CHUNK; j < (i + 1) * POSTINGS_PER_CHUNK && j < docIdList.size(); j++) {
                 vector<uint8_t> enDocId = docIdList[j];
                 for (unsigned char & k : enDocId) {  // Write each byte
                     outfile.write(reinterpret_cast<const char *>(&k), sizeof(uint8_t));
                 }
             }
             // Write encoded frequencies for each block
-            for (int j = i * POSTINGS_PER_BLOCK; j < (i + 1) * POSTINGS_PER_BLOCK && j < docIdList.size(); j++) {
+            for (int j = i * POSTINGS_PER_CHUNK; j < (i + 1) * POSTINGS_PER_CHUNK && j < docIdList.size(); j++) {
                 vector<uint8_t> enFreq = freqList[j];
                 for (unsigned char & k : enFreq) {  // Write each byte
                     outfile.write(reinterpret_cast<const char *>(&k), sizeof(uint8_t));

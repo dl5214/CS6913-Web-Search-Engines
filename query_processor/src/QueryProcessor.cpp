@@ -48,6 +48,40 @@ uint32_t QueryProcessor::_getMetaSize(uint32_t metadataSize, vector<uint32_t> &l
 }
 
 
+string QueryProcessor::readDocContent(uint32_t docId) {
+    // Open the dataset file to read the content
+    ifstream datasetFile;
+    if (FILE_MODE_BIN) {
+        datasetFile.open(DATA_SOURCE_PATH, ios::in | ios::binary);  // Open in binary mode
+    } else {
+        datasetFile.open(DATA_SOURCE_PATH, ios::in);  // Open in text mode
+    }
+    if (!datasetFile.is_open()) {
+        cerr << "Error opening dataset file" << endl;
+        return "";
+    }
+
+    // Fetch the document position and data length from the PageTable
+    streamoff docPos = pageTable.pageTable[docId].docPos;
+    uint32_t dataLength = pageTable.pageTable[docId].dataLength;
+
+    // Seek to the document position
+    datasetFile.seekg(docPos, ios::beg);
+
+    // Create buffer to hold the document content
+    char *buffer = new char[dataLength + 1];
+    datasetFile.read(buffer, dataLength);  // Read the document content from the dataset
+    buffer[dataLength] = '\0';  // Null-terminate the content
+
+    string content = string(buffer);  // Convert the buffer to a string
+    delete[] buffer;  // Clean up the buffer
+
+    datasetFile.close();  // Close the dataset file
+
+    return content;  // Return the document content as a string
+}
+
+
 // Splits a query string into individual words using delimiters
 vector<string> QueryProcessor::_splitQuery(const string& query) {
     vector<string> queryWordList;
@@ -254,7 +288,7 @@ void QueryProcessor::_getMapTopK(map<uint32_t, double> &docScoreMap, int k) {
         double score = minHeap.top().score;
 
 //        _searchResultList.insert(docID, pageTable.pageTable[docID].url, score, "");  // Add the result
-        _searchResultList.insert(docId, score);  // Add the result
+        _searchResultList.insert(docId, score, readDocContent(docId));  // Add the result
         minHeap.pop();  // Remove the top element
     }
 }
@@ -279,7 +313,7 @@ void QueryProcessor::_getListTopK(vector<double> &scoreList, int k) {
         uint32_t docId = minHeap.top().docId;
         double score = minHeap.top().score;
 //        _searchResultList.insert(docID, pageTable.pageTable[docID].url, score, "");
-        _searchResultList.insert(docId, score);
+        _searchResultList.insert(docId, score, readDocContent(docId));
         minHeap.pop();
     }
 }
@@ -676,7 +710,7 @@ void QueryProcessor::_outputTopKResults(priority_queue<DocScoreEntry>& topKHeap)
 
     // Output the results
     for (const auto& [docId, score] : topKResults) {
-        _searchResultList.insert(docId, score);
+        _searchResultList.insert(docId, score, readDocContent(docId));
     }
 
 }

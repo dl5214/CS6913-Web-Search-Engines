@@ -10,9 +10,10 @@ using namespace std;
 
 class Document {
 public:
-    uint32_t docId; // doc id
+    uint32_t docId; // doc ID
     uint32_t dataLength; // the number of data file containing this page
     uint32_t wordCount; // number of words
+    streamoff docPos;  // document position as stream offset
     void print() const;
 };
 

@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 # Define C++ server connection details
 SERVER_HOST = '127.0.0.1'  # Use the correct IP address of your C++ server
-SERVER_PORT = 9001        # Port number where your C++ server is running
+SERVER_PORT = 9001         # Port number where your C++ server is running
 
 # Function to send query to C++ server and receive the result
 def query_cpp_server(query):
@@ -15,14 +15,34 @@ def query_cpp_server(query):
             s.connect((SERVER_HOST, SERVER_PORT))
             s.sendall(f"{query}\n".encode('utf-8'))  # Send query to C++ server
 
-            # Receive response from C++ server
-            result = s.recv(1024).decode('utf-8')  # Adjust buffer size if needed
-            # Reverse the result lines before returning them
-            result_lines = result.strip().splitlines()
-            reversed_result = '\n'.join(result_lines[::-1])
-            return reversed_result
+            # Adjust buffer size to receive full response (increased to handle content)
+            result = s.recv(4096).decode('utf-8')  # Adjust buffer size if needed
+            return result
     except Exception as e:
         return f"Error: {str(e)}"
+
+# Preprocess the result and split it into a list of dictionaries for each search result
+def preprocess_result(result):
+    result_list = []
+    for line in result.strip().splitlines():
+        # Split each line into three parts: DocId, Score, and Content
+        parts = line.split(', ', 2)
+        if len(parts) == 3:
+            doc_id = parts[0].split(': ')[1]
+            score = parts[1].split(': ')[1]
+            content = parts[2]
+            result_list.append({
+                'doc_id': doc_id,
+                'score': score,
+                'content': content
+            })
+        else:
+            result_list.append({
+                'doc_id': 'Invalid',
+                'score': 'Invalid',
+                'content': line
+            })
+    return result_list
 
 # Route for the search page
 @app.route('/')
@@ -45,9 +65,13 @@ def search():
 
     if query and query_mode:
         # Send query and mode to C++ server and get the result
-        result = query_cpp_server(f"{query}|{query_mode}")  # Pass both query and mode
-        print(result)
-        return render_template('result.html', query=query, query_mode=mode_text, result=result)
+        raw_result = query_cpp_server(f"{query}|{query_mode}")  # Pass both query and mode
+
+        # Preprocess the result to extract DocId, Score, and Content
+        processed_result = preprocess_result(raw_result)
+
+        print(processed_result)
+        return render_template('result.html', query=query, query_mode=mode_text, results=processed_result)
     else:
         return render_template('search.html', error="Please enter a query and select a mode")
 

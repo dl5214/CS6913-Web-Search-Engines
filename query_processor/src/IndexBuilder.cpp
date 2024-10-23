@@ -124,16 +124,11 @@ void IndexBuilder::readData(const char *filepath) {
     infile.rdbuf()->pubsetbuf(buffer, BUFFER_SIZE);  // Set custom buffer for efficient I/O
 
     string docContent;
-    int debugReadCount = 0;  // Counter to limit the amount of debug output
+//    int debugReadCount = 0;  // Counter to limit the amount of debug output
+    streamoff currentPos = 0;
 
     // Read the file in chunks and process the content
     while (getline(infile, docContent)) {
-        // Output the first 1000 characters for debugging purposes
-        if (DEBUG_MODE && debugReadCount == 0) {
-            cout << "First 1000 characters of the file:\n";
-            cout << docContent.substr(0, 1000) << endl;
-            debugReadCount++;
-        }
 
         // Assuming the format: docID <tab> content
         size_t tab_pos = docContent.find("\t");
@@ -155,7 +150,10 @@ void IndexBuilder::readData(const char *filepath) {
                     if (doc.docId >= 0) {
                         doc.dataLength = fullText.length();  // Calculate the length of the document
                         doc.wordCount = _calcWordFreq(fullText, doc.docId);  // Calculate word frequency
+                        doc.docPos = currentPos;
                         pageTable.add(doc);  // Add the document to the page table
+                        // Manually update the position based on the content length
+                        currentPos += docContent.size() + 1; // +1 for the newline character
 
                         if (DEBUG_MODE && doc.docId % 10000 == 0) {
                             cout << "Processing DocID: " << doc.docId << endl;
