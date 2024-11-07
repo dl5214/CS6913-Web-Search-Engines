@@ -15,15 +15,16 @@ def load_h5_embeddings(file_path, id_key='id', embedding_key='embedding'):
     - embedding_key: Dataset name for the embeddings inside the HDF5 file.
 
     Returns:
-    - embeddings_dict: Dictionary with query_id as keys and embeddings as values.
+    - ids: Numpy array of IDs (as strings).
+    - embeddings: Numpy array of embeddings (as float32).
     """
     print(f"Loading data from {file_path}...")
     with h5py.File(file_path, 'r') as f:
         ids = np.array(f[id_key]).astype(str)
         embeddings = np.array(f[embedding_key]).astype(np.float32)
-    embeddings_dict = {q_id: emb for q_id, emb in zip(ids, embeddings)}
-    print(f"Loaded {len(embeddings_dict)} embeddings.")
-    return embeddings_dict
+
+    print(f"Loaded {len(ids)} embeddings.")
+    return ids, embeddings
 
 
 def load_query_ids(tsv_file_path):
@@ -50,7 +51,27 @@ def load_query_ids(tsv_file_path):
     return query_ids
 
 
-def save_retrieved_results(output_path, query_id, retrieved_passages, distances, run_name="run1"):
+def load_doc_ids(tsv_file_path):
+    """
+    Load passage or doc IDs from a TSV file into a list.
+
+    Parameters:
+    - tsv_file_path: Path to the TSV file.
+
+    Returns:
+    - doc_ids: List of doc IDs (as integers), indexed by the order they appear in the file.
+    """
+    print(f"Loading doc IDs from {tsv_file_path}...")
+    doc_ids = []
+    with open(tsv_file_path, 'r') as file:
+        for line in file:
+            doc_id = int(line.strip())
+            doc_ids.append(doc_id)
+    print(f"Loaded {len(doc_ids)} doc IDs.")
+    return doc_ids
+
+
+def save_retrieved_results(output_path, query_id, retrieved_passages, similarities, run_name="run1"):
     """
     Save retrieved passages for a query to a TSV file in the TREC format.
 
@@ -58,16 +79,16 @@ def save_retrieved_results(output_path, query_id, retrieved_passages, distances,
     - output_path: Path to the output results file.
     - query_id: The ID of the query.
     - retrieved_passages: List of retrieved passage IDs.
-    - distances: List of distances corresponding to each retrieved passage.
+    - similarities: List of similarities corresponding to each retrieved passage.
     - run_name: Name for this retrieval run.
     """
     with open(output_path, "a") as f:
-        for rank, (passage_id, distance) in enumerate(zip(retrieved_passages, distances), start=1):
-            score = -distance  # Use negative distance as score
+        for rank, (passage_id, similarity) in enumerate(zip(retrieved_passages, similarities), start=1):
+            score = similarity
             f.write(f"{query_id}\tQ0\t{passage_id}\t{rank}\t{score}\t{run_name}\n")
 
 
-def main(query_file_path, embedding_file_path, output_file, k=100, ef_search=120):
+def main(query_file_path, embedding_file_path, output_file, doc_ids_file, k=100, ef_search=1000):
     # Load HNSW index
     index = faiss.read_index('../../data/hnsw_index.faiss')
     print("Index loaded from disk.")
@@ -75,28 +96,33 @@ def main(query_file_path, embedding_file_path, output_file, k=100, ef_search=120
     # Set query parameters
     index.hnsw.efSearch = ef_search
 
-    # Load embeddings into a dictionary
-    embeddings_dict = load_h5_embeddings(embedding_file_path)
+    # Load query IDs and embeddings
+    query_ids, query_embeddings = load_h5_embeddings(embedding_file_path)
+    embeddings_dict = dict(zip(query_ids, query_embeddings))
 
     # Load query IDs from the qrels file, maintaining file order
-    query_ids = load_query_ids(query_file_path)
+    query_ids_in_order = load_query_ids(query_file_path)
 
-    # Check if all query IDs in qrels file are in embeddings
-    missing_query_ids = [q_id for q_id in query_ids if q_id not in embeddings_dict]
-    if missing_query_ids:
-        print(f"Warning: {len(missing_query_ids)} query IDs in {query_file_path} not found in embeddings.")
-        print(f"Missing query IDs: {missing_query_ids}")
+    # Load doc IDs from the provided file
+    doc_ids = load_doc_ids(doc_ids_file)
+
+    # Remove the existing outfile path
+    if os.path.exists(output_file):
+        os.remove(output_file)
 
     # Perform queries and save results
     print(f"Saving results for queries from {query_file_path} to {output_file}")
-    for query_id in query_ids:
+    for query_id in query_ids_in_order:
         if query_id in embeddings_dict:
             query_embedding = embeddings_dict[query_id].reshape(1, -1)  # Reshape to match search input
-            distances, indices = index.search(query_embedding, k)
+            # query_embedding = normalize(query_embedding, norm='l2')
+            similarities, indices = index.search(query_embedding, k)
 
-            # Save the top-k nearest passages in the required format
-            retrieved_passages = indices[0]
-            save_retrieved_results(output_file, query_id, retrieved_passages, distances[0], run_name="run1")
+            # Map indices to actual doc IDs
+            retrieved_passages = [doc_ids[idx] for idx in indices[0]]
+
+            # Save results
+            save_retrieved_results(output_file, query_id, retrieved_passages, similarities[0], run_name="run1")
         else:
             print(f"Warning: Embedding for query ID {query_id} not found.")
 
@@ -113,16 +139,19 @@ if __name__ == "__main__":
         '../../data/qrels.eval.one.tsv',
         '../../data/msmarco_queries_dev_eval_embeddings.h5',
         os.path.join(output_dir, "retrieved_results_eval_one.tsv"),
+        '../../data/msmarco_passages_subset.tsv'
     )
     main(
         '../../data/qrels.eval.two.tsv',
         '../../data/msmarco_queries_dev_eval_embeddings.h5',
         os.path.join(output_dir, "retrieved_results_eval_two.tsv"),
+        '../../data/msmarco_passages_subset.tsv'
     )
     main(
         '../../data/qrels.dev.tsv',
         '../../data/msmarco_queries_dev_eval_embeddings.h5',
         os.path.join(output_dir, "retrieved_results_dev.tsv"),
+        '../../data/msmarco_passages_subset.tsv'
     )
 
     end_time = time.time()  # Record end time

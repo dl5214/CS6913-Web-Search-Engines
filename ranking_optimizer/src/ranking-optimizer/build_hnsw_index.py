@@ -36,7 +36,9 @@ def main(m=6, ef_construction=120):
 
     # Create HNSW index
     embedding_dim = passages_embeddings.shape[1]
-    index = faiss.IndexHNSWFlat(embedding_dim, m)
+    # index = faiss.IndexHNSWFlat(embedding_dim, m)
+    # Use inner product distance instead
+    index = faiss.IndexHNSWFlat(embedding_dim, m, faiss.METRIC_INNER_PRODUCT)
     index.hnsw.efConstruction = ef_construction
 
     # Add passages embeddings to the index
