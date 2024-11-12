@@ -678,8 +678,18 @@ void QueryProcessor::_maxScoreTopK(const vector<string>& wordList,
 
     // Step 1: Compute max BM25 score for each term
     for (int i = 0; i < wordList.size(); ++i) {
-        uint32_t maxFreq = *max_element(freqLists[i].begin(), freqLists[i].end());
-        maxScores[i] = _getBM25(wordList[i], 0, maxFreq);  // Calculate BM25 for max frequency
+        uint32_t maxFreq = 0;
+
+        // Check if freqLists[i] is non-empty before calculating max element
+        if (!freqLists[i].empty()) {
+            maxFreq = *max_element(freqLists[i].begin(), freqLists[i].end());
+        } else {
+            // Optionally log a warning if freqLists[i] is unexpectedly empty
+            cout << "Warning: freqLists[" << i << "] is empty for term: " << wordList[i] << endl;
+        }
+
+        // Calculate BM25 for max frequency (defaulting to 0 if freqLists[i] was empty)
+        maxScores[i] = _getBM25(wordList[i], 0, maxFreq);
     }
 
     // Step 2: Process docIDs by term
