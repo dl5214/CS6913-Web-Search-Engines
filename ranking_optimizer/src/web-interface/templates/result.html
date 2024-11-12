@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Results</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/result.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Search Results</h1>
+            <p><strong>Your query:</strong> {{ query }}</p>
+            <p><strong>Mode:</strong> <span style="font-weight: normal;">{{ query_mode }}</span></p>
+        </header>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Document ID</th>
+                        <th>BM25 Score</th>
+                        <th>Content</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for result in results %}
+                        <tr>
+                            <td>{{ result.doc_id }}</td>
+                            <td>{{ result.score }}</td>
+                            <td>{{ result.content }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            <a href="/">Back to search</a>
+        </footer>
+    </div>
+</body>
+</html>

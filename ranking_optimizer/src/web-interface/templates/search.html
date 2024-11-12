@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Engine</title>
+    <!-- Link to the external CSS file -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/search.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Search Engine</h1>
+        <form action="/search" method="POST">
+            <!-- Centered input box for search query -->
+            <div class="search-box">
+                <input type="text" name="query" placeholder="Enter your query here" required>
+            </div>
+
+            <!-- Radio buttons for query mode (AND / OR) -->
+            <div class="query-mode">
+                <label>
+                    <input type="radio" name="query_mode" value="0" required>
+                    Conjunctive (AND)
+                </label>
+                <label>
+                    <input type="radio" name="query_mode" value="1" required>
+                    Disjunctive (OR)
+                </label>
+            </div>
+
+            <!-- Search button -->
+            <div class="search-button">
+                <button type="submit">Search</button>
+            </div>
+        </form>
+
+        <!-- Display any error message -->
+        {% if error %}
+        <p style="color:red">{{ error }}</p>
+        {% endif %}
+    </div>
+</body>
+</html>
