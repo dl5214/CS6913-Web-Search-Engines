@@ -122,7 +122,7 @@ def main(query_file_path, embedding_file_path, output_file, doc_ids_file, k=100,
             retrieved_passages = [doc_ids[idx] for idx in indices[0]]
 
             # Save results
-            save_retrieved_results(output_file, query_id, retrieved_passages, similarities[0], run_name="run1")
+            save_retrieved_results(output_file, query_id, retrieved_passages, similarities[0], run_name="run2")
         else:
             print(f"Warning: Embedding for query ID {query_id} not found.")
 
@@ -138,19 +138,19 @@ if __name__ == "__main__":
     main(
         '../../data/qrels.eval.one.tsv',
         '../../data/msmarco_queries_dev_eval_embeddings.h5',
-        os.path.join(output_dir, "retrieved_results_eval_one.tsv"),
+        os.path.join(output_dir, "system2_results_eval_one.tsv"),
         '../../data/msmarco_passages_subset.tsv'
     )
     main(
         '../../data/qrels.eval.two.tsv',
         '../../data/msmarco_queries_dev_eval_embeddings.h5',
-        os.path.join(output_dir, "retrieved_results_eval_two.tsv"),
+        os.path.join(output_dir, "system2_results_eval_two.tsv"),
         '../../data/msmarco_passages_subset.tsv'
     )
     main(
         '../../data/qrels.dev.tsv',
         '../../data/msmarco_queries_dev_eval_embeddings.h5',
-        os.path.join(output_dir, "retrieved_results_dev.tsv"),
+        os.path.join(output_dir, "system2_results_dev.tsv"),
         '../../data/msmarco_passages_subset.tsv'
     )
 
