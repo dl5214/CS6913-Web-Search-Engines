@@ -14,7 +14,7 @@ def query_cpp_server(query, query_mode="1"):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((SERVER_HOST, SERVER_PORT))
             s.sendall(f"{query}|{query_mode}\n".encode('utf-8'))
-            result = s.recv(4096).decode('utf-8')  # Adjust buffer size if needed
+            result = s.recv(8192).decode('utf-8')  # Adjust buffer size if needed
             return result
     except Exception as e:
         print(f"Error querying server: {e}")
@@ -50,6 +50,7 @@ def format_results(query_id, raw_result):
 
 # Main function to process the TSV file and save the output
 def main(input_file, output_file):
+    print(f"Processing queries in {input_file}...")
     with open(input_file, 'r', encoding='utf-8') as infile, open(output_file, 'w', encoding='utf-8') as outfile:
         reader = csv.reader(infile, delimiter='\t')
         query_count = 0

@@ -38,7 +38,7 @@ using namespace std;
 #define DISJUNCTIVE 1
 #define DAAT_FLAG 1 // 0: TAAT, 1: DAAT
 
-#define NUM_TOP_RESULT 15
+#define NUM_TOP_RESULT 300
 
 #define DEBUG_MODE 1
 #define INDEX_SUBSET 1  // only parse the 1 million subset out of 8.8 millions
@@ -52,6 +52,6 @@ using namespace std;
 
 #define LOAD_FLAG 1  // whether to load lexicon and pagetable into main memory
 #define QUERY_FLAG 1
-#define FRONTEND_FLAG 0  // 0: use console, 1: use Flask web interface
+#define FRONTEND_FLAG 1  // 0: use console, 1: use Flask web interface
 
 #endif
