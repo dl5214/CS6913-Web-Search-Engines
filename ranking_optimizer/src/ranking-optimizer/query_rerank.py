@@ -11,6 +11,8 @@ SERVER_PORT = 9001
 TOP_K_DOCS = 300  # Number of top documents to retrieve using BM25; can be adjusted as needed
 FINAL_TOP_K = 100  # Final number of top documents after re-ranking
 
+QUERY_BM25 = True  # Set to True to use BM25 API, False to use file data
+
 
 # Function to send a query to the C++ server and receive the result (top doc IDs)
 def query_cpp_server(query, query_mode="1"):
@@ -51,8 +53,6 @@ def get_query_embedding(query_id, query_embeddings_dict):
 
 
 # Function to retrieve embeddings for a list of document IDs
-# def get_doc_embeddings(doc_ids, doc_embeddings_dict):
-#     return np.array([doc_embeddings_dict[doc_id] for doc_id in doc_ids if doc_id in doc_embeddings_dict])
 def get_doc_embeddings(doc_ids, doc_embeddings_dict):
     # Convert IDs to strings and check for missing IDs
     doc_ids = [str(doc_id) for doc_id in doc_ids]  # Ensure IDs are strings
@@ -86,9 +86,53 @@ def save_reranked_results(output_path, query_id, reranked_results, run_name="run
             f.write(f"{query_id}\tQ0\t{doc_id}\t{rank}\t{score}\t{run_name}\n")
 
 
+# Function to load BM25 results from file
+def load_bm25_results_from_file(file_path):
+    bm25_results = {}
+    with open(file_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter='\t')
+        for row in reader:
+            if len(row) >= 3:
+                query_id, doc_id, score = row[0], row[2], row[4]
+                if query_id not in bm25_results:
+                    bm25_results[query_id] = []
+                if len(bm25_results[query_id]) < TOP_K_DOCS:
+                    bm25_results[query_id].append(doc_id)
+    return bm25_results
+
+
+# Function to rerank using BM25 results from the API
+def rerank_from_bm25_api(query_text, query_id, query_embedding, doc_embeddings_dict):
+    top_doc_ids = query_cpp_server(query_text, query_mode="1")
+    doc_count = min(len(top_doc_ids), TOP_K_DOCS)
+    # print(f"BM25 server returned {len(top_doc_ids)} doc IDs for queryID={query_id}, using top {doc_count}")
+    doc_embeddings = get_doc_embeddings(top_doc_ids, doc_embeddings_dict)
+    if len(doc_embeddings) == 0:
+        print(f"Warning: No embeddings found for top documents of query ID {query_id}")
+        return []
+    reranked_results = rerank_by_similarity(query_embedding, top_doc_ids, doc_embeddings)
+    print(f"Re-ranked top {len(reranked_results)} doc IDs from top {doc_count} BM25 scores for queryID={query_id}")
+    return reranked_results
+
+
+# Function to rerank using BM25 results from a file
+def rerank_from_bm25_file(query_id, query_embedding, bm25_results, doc_embeddings_dict):
+    top_doc_ids = bm25_results.get(query_id, [])
+    doc_count = min(len(top_doc_ids), TOP_K_DOCS)
+    # print(f"File-based BM25 returned {len(top_doc_ids)} doc IDs for queryID={query_id}, using top {doc_count}")
+    doc_embeddings = get_doc_embeddings(top_doc_ids, doc_embeddings_dict)
+    if len(doc_embeddings) == 0:
+        print(f"Warning: No embeddings found for top documents of query ID {query_id}")
+        return []
+    reranked_results = rerank_by_similarity(query_embedding, top_doc_ids, doc_embeddings)
+    print(f"Re-ranked top {len(reranked_results)} doc IDs from top {doc_count} BM25 scores for queryID={query_id}")
+    return reranked_results
+
+
 # Main function to process and re-rank queries
-def main(query_file_path, query_embedding_file_path, doc_embedding_file_path, output_file):
+def main(query_bm25_flag, query_file_path, query_embedding_file_path, doc_embedding_file_path, output_file, bm25_file=None):
     print(f"Starting processing queries in file: {query_file_path}")
+
     # Load query embeddings
     query_ids, query_embeddings = load_h5_embeddings(query_embedding_file_path)
     query_embeddings_dict = dict(zip(query_ids, query_embeddings))
@@ -97,84 +141,72 @@ def main(query_file_path, query_embedding_file_path, doc_embedding_file_path, ou
     doc_ids, doc_embeddings = load_h5_embeddings(doc_embedding_file_path)
     doc_embeddings_dict = dict(zip(doc_ids, doc_embeddings))
 
-    # Remove the existing output file if it exists
+    # Load BM25 results from file if not querying the BM25 API
+    bm25_results = load_bm25_results_from_file(bm25_file) if not QUERY_BM25 and bm25_file else {}
+
     if os.path.exists(output_file):
         os.remove(output_file)
 
-    query_count = 0  # To keep track of the number of queries processed
+    query_count = 0
 
-    # Process each query
     with open(query_file_path, 'r', encoding='utf-8') as infile:
         reader = csv.reader(infile, delimiter='\t')
-
         for row in reader:
             if len(row) < 2:
                 continue
             query_id, query_text = row[0], row[1]
-            print(f"Processing queryID={query_id} with text '{query_text}'")
             query_count += 1
+            print(f"Processing query #{query_count} with queryID={query_id} and text '{query_text}'")
 
-            # Retrieve the top document IDs from BM25
-            top_doc_ids = query_cpp_server(query_text, query_mode="1")
-            num_retrieved_docs = len(top_doc_ids)
-            print(f"Retrieved {num_retrieved_docs} doc IDs from BM25 for queryID={query_id}")
-
-            if num_retrieved_docs == 0:
-                print(f"No results found for queryID={query_id}")
-                continue
-
-            # Get query embedding
             query_embedding = get_query_embedding(query_id, query_embeddings_dict)
             if query_embedding is None:
                 print(f"Warning: Embedding for query ID {query_id} not found.")
                 continue
+
+            if QUERY_BM25:
+                reranked_results = rerank_from_bm25_api(query_text, query_id, query_embedding, doc_embeddings_dict)
             else:
-                # print(f"Embedding for query ID {query_id}: {query_embedding}")
-                pass
+                reranked_results = rerank_from_bm25_file(query_id, query_embedding, bm25_results, doc_embeddings_dict)
 
-            # Get document embeddings for retrieved doc IDs
-            doc_embeddings = get_doc_embeddings(top_doc_ids, doc_embeddings_dict)
-            if len(doc_embeddings) == 0:
-                print(f"Warning: No embeddings found for top documents of query ID {query_id}")
-                continue
-
-            # Perform re-ranking based on cosine similarity
-            reranked_results = rerank_by_similarity(query_embedding, top_doc_ids, doc_embeddings)
-            print(f"Re-ranked {len(reranked_results)} documents for queryID={query_id}")
-
-            # Save re-ranked results
-            save_reranked_results(output_file, query_id, reranked_results, run_name="run3")
+            if reranked_results:
+                save_reranked_results(output_file, query_id, reranked_results, run_name="run3")
 
     print(f"Completed processing for file: {query_file_path}. Total queries processed: {query_count}")
 
 
 if __name__ == "__main__":
-    start_time = time.time()
 
-    # Run for each query file
+    QUERY_BM25 = False
+
+    start_time = time.time()
     output_dir = "../../data/"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Process and rerank queries for each file
     main(
+        query_bm25_flag=QUERY_BM25,
         query_file_path='../../data/query.content.eval.one.tsv',
         query_embedding_file_path='../../data/msmarco_queries_dev_eval_embeddings.h5',
         doc_embedding_file_path='../../data/msmarco_passages_embeddings_subset.h5',
-        output_file=os.path.join(output_dir, "system3_results_eval_one.tsv")
+        output_file=os.path.join(output_dir, "system3_results_eval_one.tsv"),
+        bm25_file='../../data/system1_results_eval_one_500.tsv'  # Path to system1 output file
     )
 
     main(
+        query_bm25_flag=QUERY_BM25,
         query_file_path='../../data/query.content.eval.two.tsv',
         query_embedding_file_path='../../data/msmarco_queries_dev_eval_embeddings.h5',
         doc_embedding_file_path='../../data/msmarco_passages_embeddings_subset.h5',
-        output_file=os.path.join(output_dir, "system3_results_eval_two.tsv")
+        output_file=os.path.join(output_dir, "system3_results_eval_two.tsv"),
+        bm25_file='../../data/system1_results_eval_two_500.tsv'  # Path to system1 output file
     )
 
     main(
+        query_bm25_flag=QUERY_BM25,
         query_file_path='../../data/query.content.dev.tsv',
         query_embedding_file_path='../../data/msmarco_queries_dev_eval_embeddings.h5',
         doc_embedding_file_path='../../data/msmarco_passages_embeddings_subset.h5',
-        output_file=os.path.join(output_dir, "system3_results_dev.tsv")
+        output_file=os.path.join(output_dir, "system3_results_dev.tsv"),
+        bm25_file='../../data/system1_results_dev_500.tsv'  # Path to system1 output file
     )
 
     end_time = time.time()

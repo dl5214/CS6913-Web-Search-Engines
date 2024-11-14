@@ -14,14 +14,13 @@ def query_cpp_server(query, query_mode="1"):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((SERVER_HOST, SERVER_PORT))
             s.sendall(f"{query}|{query_mode}\n".encode('utf-8'))
-            result = s.recv(8192).decode('utf-8')  # Adjust buffer size if needed
+            result = s.recv(32768).decode('utf-8')  # Adjust buffer size if needed
             return result
     except Exception as e:
         print(f"Error querying server: {e}")
         return None
 
 
-# Function to process and format the server response
 # Function to process and format the server response
 def format_results(query_id, raw_result):
     result_list = []
