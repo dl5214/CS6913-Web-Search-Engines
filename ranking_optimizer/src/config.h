@@ -38,7 +38,7 @@ using namespace std;
 #define DISJUNCTIVE 1
 #define DAAT_FLAG 1 // 0: TAAT, 1: DAAT
 
-#define NUM_TOP_RESULT 300
+#define NUM_TOP_RESULT 500
 
 #define DEBUG_MODE 1
 #define INDEX_SUBSET 1  // only parse the 1 million subset out of 8.8 millions

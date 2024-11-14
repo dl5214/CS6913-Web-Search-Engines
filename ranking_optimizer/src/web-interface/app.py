@@ -17,7 +17,7 @@ def query_cpp_server(query):
             s.sendall(f"{query}\n".encode('utf-8'))  # Send query to C++ server
 
             # Adjust buffer size to receive full response (increased to handle content)
-            result = s.recv(4096).decode('utf-8')  # Adjust buffer size if needed
+            result = s.recv(65536).decode('utf-8')  # Adjust buffer size if needed
             return result
     except Exception as e:
         return f"Error: {str(e)}"
@@ -32,11 +32,21 @@ def preprocess_result(result):
         if len(parts) == 3:
             doc_id = parts[0].split(': ')[1]
             score = parts[1].split(': ')[1]
-            content = parts[2]
+            # Check if Content: is followed by actual content or is empty
+            content_parts = parts[2].split(': ', 1)
+            content = content_parts[1] if len(content_parts) > 1 else ''
             result_list.append({
                 'doc_id': doc_id,
                 'score': score,
                 'content': content
+            })
+        elif len(parts) == 2:
+            doc_id = parts[0].split(': ')[1]
+            score = parts[1].split(': ')[1]
+            result_list.append({
+                'doc_id': doc_id,
+                'score': score,
+                'content': ''
             })
         else:
             result_list.append({

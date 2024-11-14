@@ -55,8 +55,7 @@ uint32_t QueryProcessor::_getMetaSize(uint32_t metadataSize, vector<uint32_t> &l
 }
 
 
-string QueryProcessor::readDocContent(uint32_t docId) {
-
+string QueryProcessor::_readDocContent(uint32_t docId, bool stripDocID = true) {
     // Find the index of docId in the pageTable
     int docIndex;
     if (INDEX_SUBSET) {
@@ -65,9 +64,8 @@ string QueryProcessor::readDocContent(uint32_t docId) {
             cerr << "Error: docId " << docId << " not found in PageTable" << endl;
             return "";
         }
-    }
-    else {
-        docIndex = (int)docId;
+    } else {
+        docIndex = static_cast<int>(docId);
     }
 
     // Open the dataset file to read the content
@@ -89,15 +87,24 @@ string QueryProcessor::readDocContent(uint32_t docId) {
     // Seek to the document position
     datasetFile.seekg(docPos, ios::beg);
 
-    // Create buffer to hold the document content
+    // Create a buffer to hold the document content
     char *buffer = new char[dataLength + 1];
     datasetFile.read(buffer, dataLength);  // Read the document content from the dataset
     buffer[dataLength] = '\0';  // Null-terminate the content
 
-    string content = string(buffer);  // Convert the buffer to a string
+    string content(buffer);  // Convert the buffer to a string
     delete[] buffer;  // Clean up the buffer
 
-    datasetFile.close();  // Close the dataset file
+    // Close the dataset file
+    datasetFile.close();
+
+    // If stripDocID is true, remove the docID from the beginning of the content
+    if (stripDocID) {
+        size_t firstTab = content.find('\t');
+        if (firstTab != string::npos) {
+            content = content.substr(firstTab + 1);  // Remove docID and keep the rest
+        }
+    }
 
     return content;  // Return the document content as a string
 }
@@ -106,7 +113,7 @@ string QueryProcessor::readDocContent(uint32_t docId) {
 // Splits a query string into individual words using delimiters
 vector<string> QueryProcessor::_splitQuery(const string& query) {
     vector<string> queryWordList;
-    string sep = " :;,.\t\v\r\n\f[]{}()<>+-=*&^%$#@!~`\'\"|\\/?·\"：“”";
+    string sep = " :;,.\t\v\r\n\f[]{}()<>+-=*&^%$#@!~`\'\"|\\/?·\"：“”_";
     string word;
 
     for (char ch : query) {
@@ -309,7 +316,7 @@ void QueryProcessor::_getMapTopK(map<uint32_t, double> &docScoreMap, int k) {
         double score = minHeap.top().score;
 
         if (RETRIEVE_CONTENT) {
-            _searchResultList.insert(docId, score, readDocContent(docId));  // Add the result
+            _searchResultList.insert(docId, score, _readDocContent(docId));  // Add the result
         }
         else {
             _searchResultList.insert(docId, score, "");  // Add the result w/o original content
@@ -338,7 +345,7 @@ void QueryProcessor::_getListTopK(vector<double> &scoreList, int k) {
         uint32_t docId = minHeap.top().docId;
         double score = minHeap.top().score;
         if (RETRIEVE_CONTENT) {
-            _searchResultList.insert(docId, score, readDocContent(docId));
+            _searchResultList.insert(docId, score, _readDocContent(docId));
         }
         else {
             _searchResultList.insert(docId, score, "");
@@ -750,7 +757,7 @@ void QueryProcessor::_outputTopKResults(priority_queue<DocScoreEntry>& topKHeap)
     // Output the results
     for (const auto& [docId, score] : topKResults) {
         if (RETRIEVE_CONTENT) {
-            _searchResultList.insert(docId, score, readDocContent(docId));
+            _searchResultList.insert(docId, score, _readDocContent(docId));
         }
         else {
             _searchResultList.insert(docId, score, "");
