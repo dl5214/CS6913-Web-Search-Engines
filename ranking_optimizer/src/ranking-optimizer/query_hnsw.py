@@ -88,7 +88,7 @@ def save_retrieved_results(output_path, query_id, retrieved_passages, similariti
             f.write(f"{query_id}\tQ0\t{passage_id}\t{rank}\t{score}\t{run_name}\n")
 
 
-def main(query_file_path, embedding_file_path, output_file, doc_ids_file, k=100, ef_search=1000):
+def main(query_file_path, embedding_file_path, output_file, doc_ids_file, k=100, ef_search=500):
     # Load HNSW index
     index = faiss.read_index('../../data/hnsw_index.faiss')
     print("Index loaded from disk.")

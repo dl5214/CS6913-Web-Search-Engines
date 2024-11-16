@@ -38,11 +38,11 @@ using namespace std;
 #define DISJUNCTIVE 1
 #define DAAT_FLAG 1 // 0: TAAT, 1: DAAT
 
-#define NUM_TOP_RESULT 500
+#define NUM_TOP_RESULT 20
 
 #define DEBUG_MODE 1
 #define INDEX_SUBSET 1  // only parse the 1 million subset out of 8.8 millions
-#define RETRIEVE_CONTENT 0  // 0: only retrieve docId, 1: retrieve original content
+#define RETRIEVE_CONTENT 1  // 0: only retrieve docId, 1: retrieve original content
 
 #define PARSE_INDEX_FLAG 0  // whether to build intermediate index
 #define PAGE_TABLE_FLAG 0  // whether write Page Table
