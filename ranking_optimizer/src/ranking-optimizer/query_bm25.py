@@ -35,8 +35,8 @@ def format_results(query_id, raw_result):
             score = parts[1].split(': ')[1]   # Get Score from "Score: <score>"
             result_list.append((doc_id, score))
 
-    # Reverse the list to have the highest scores at the top
-    result_list = result_list[::-1]
+    # # Reverse the list to have the highest scores at the top
+    # result_list = result_list[::-1]
 
     # Format the output with rank
     formatted_results = []

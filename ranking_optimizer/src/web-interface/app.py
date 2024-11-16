@@ -84,7 +84,6 @@ def search():
         # Preprocess the result to extract DocId, Score, and Content
         processed_result = preprocess_result(raw_result)
 
-        print(processed_result)
         return render_template('result.html', query=query, query_mode=mode_text, results=processed_result)
     else:
         return render_template('search.html', error="Please enter a query and select a mode")

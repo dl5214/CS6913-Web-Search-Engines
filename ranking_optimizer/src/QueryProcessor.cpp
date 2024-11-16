@@ -310,19 +310,8 @@ void QueryProcessor::_getMapTopK(map<uint32_t, double> &docScoreMap, int k) {
         }
     }
 
-    // Extract the top-k elements from the priority queue and insert them into the result list
-    while (!minHeap.empty()) {
-        uint32_t docId = minHeap.top().docId;
-        double score = minHeap.top().score;
-
-        if (RETRIEVE_CONTENT) {
-            _searchResultList.insert(docId, score, _readDocContent(docId));  // Add the result
-        }
-        else {
-            _searchResultList.insert(docId, score, "");  // Add the result w/o original content
-        }
-        minHeap.pop();  // Remove the top element
-    }
+    // Output the results by calling _outputTopKResults
+    _outputTopKResults(minHeap);
 }
 
 
@@ -339,19 +328,8 @@ void QueryProcessor::_getListTopK(vector<double> &scoreList, int k) {
         }
     }
 
-    // // Store the top-k results into the result list
-    while (!minHeap.empty()){
-
-        uint32_t docId = minHeap.top().docId;
-        double score = minHeap.top().score;
-        if (RETRIEVE_CONTENT) {
-            _searchResultList.insert(docId, score, _readDocContent(docId));
-        }
-        else {
-            _searchResultList.insert(docId, score, "");
-        }
-        minHeap.pop();
-    }
+    // Output the results by calling _outputTopKResults
+    _outputTopKResults(minHeap);
 }
 
 
@@ -749,22 +727,23 @@ void QueryProcessor::_maxScoreTopK(const vector<string>& wordList,
 void QueryProcessor::_outputTopKResults(priority_queue<DocScoreEntry>& topKHeap) {
     vector<pair<uint32_t, double>> topKResults;
 
+    // Extract results from the heap
     while (!topKHeap.empty()) {
         topKResults.emplace_back(topKHeap.top().docId, topKHeap.top().score);
         topKHeap.pop();
     }
 
-    // Output the results
+    // Reverse the results to ensure descending order
+    reverse(topKResults.begin(), topKResults.end());
+
+    // Insert the results into the search result list
     for (const auto& [docId, score] : topKResults) {
         if (RETRIEVE_CONTENT) {
             _searchResultList.insert(docId, score, _readDocContent(docId));
-        }
-        else {
+        } else {
             _searchResultList.insert(docId, score, "");
         }
-
     }
-
 }
 
 
